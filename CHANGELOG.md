@@ -1,5 +1,14 @@
 # Changelog
 
+## 4.5.64 - Unreleased
+
+### Fixed
+- **Alpaca live trading now keeps order-state visibility when the trading stream is unavailable.** API-key brokers use jittered, capped websocket reconnect backoff and a read-only REST order-status polling fallback so fills/cancels still flow through LumiBot's normal trade-event path during stream auth/rate-limit outages.
+- **Live daily strategies no longer drift to restart wall-clock time.** `sleeptime="1D"` live schedules for non-continuous markets now anchor to the broker calendar's regular session open instead of `now + 1 minute` after an in-session process restart.
+
+### Tests
+- **Glitch live-regression tests cover Alpaca stream outage polling and daily scheduler anchoring.** Offline unit tests assert a mocked filled Alpaca order reaches the strategy while the stream is down and that a daily trigger uses market-open time instead of the restart time.
+
 ## 4.5.63 - 2026-06-30
 
 Deploy marker: `deploy 4.5.63`

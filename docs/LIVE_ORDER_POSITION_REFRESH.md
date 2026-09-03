@@ -79,6 +79,8 @@ if cash is None:
 
 Broad broker order-list endpoints are not treated as the only source of truth for active local orders. If an active tracked order is missing from the broad list, Lumibot performs a direct broker order lookup by identifier before updating the local status. If the direct lookup fails or cannot be parsed, Lumibot leaves the local order active and logs a warning instead of marking it canceled locally.
 
+Alpaca API-key live trading uses the trading websocket for normal fill/cancel events. If that websocket is unavailable, Lumibot backs off reconnect attempts and temporarily polls Alpaca's REST order endpoints so local order and position trackers still receive fill/cancel events. The fallback is read-only: it observes broker state and feeds the same internal trade-event path as the websocket, but it does not submit, replace, or cancel orders.
+
 For Schwab, order history can include account-level mutual fund or bond activity such as sweep-fund entries, option exercise records, and other broker account-history records that are not normal strategy orders. Lumibot preserves unrecognized but representable Schwab order and position rows using `Asset.AssetType.UNKNOWN`, `Order.OrderType.UNKNOWN`, `Order.OrderSide.UNKNOWN`, or `Order.OrderStatus.UNKNOWN` instead of failing the whole refresh. A single unsupported broker-history row must not crash or poison the whole live refresh.
 
 Unknown Schwab rows carry raw broker metadata on the returned entity where available:

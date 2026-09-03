@@ -1,11 +1,14 @@
 import asyncio
 import datetime
+import os
+import random
 import time
 import traceback
 from asyncio import CancelledError
 from collections import Counter
 from datetime import timezone
 from decimal import Decimal
+from threading import Thread
 
 import pandas_market_calendars as mcal
 from alpaca.trading.client import TradingClient
@@ -24,6 +27,60 @@ from lumibot.trading_builtins import PollingStream
 from .broker import Broker
 
 logger = get_logger(__name__)
+
+
+class BackoffTradingStream(TradingStream):
+    """Trading stream with bounded reconnects; avoids an API-429 reconnect storm."""
+
+    min_retry_seconds = 5.0
+    max_retry_seconds = 300.0
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.is_connected = False
+        self.last_error = None
+        self.last_attempt_at = None
+        self.last_connected_at = None
+        seed = f"{os.getpid()}:{id(self)}:{time.monotonic_ns()}"
+        self._retry_random = random.Random(seed)
+
+    def _jittered_retry_seconds(self, retry_seconds):
+        jitter = self._retry_random.uniform(0.75, 1.25)
+        return min(self.max_retry_seconds, max(self.min_retry_seconds, retry_seconds * jitter))
+
+    async def _run_forever(self):
+        self._loop = asyncio.get_running_loop()
+        while not self._trade_updates_handler:
+            if not self._stop_stream_queue.empty():
+                self._stop_stream_queue.get(timeout=1)
+                return
+            await asyncio.sleep(0.1)
+
+        retry_seconds = self.min_retry_seconds
+        while self._should_run:
+            try:
+                if not self._running:
+                    self.last_attempt_at = time.monotonic()
+                    await self._start_ws()
+                    self._running = True
+                    self.is_connected = True
+                    self.last_error = None
+                    self.last_connected_at = time.monotonic()
+                    retry_seconds = self.min_retry_seconds
+                    await self._consume()
+                    self.is_connected = False
+                    self._running = False
+            except Exception as exc:  # SDK raises both auth and WebSocket errors here.
+                self.is_connected = False
+                self.last_error = exc
+                await self.close()
+                self._running = False
+                sleep_seconds = self._jittered_retry_seconds(retry_seconds)
+                logger.warning("Alpaca trading stream failed (%s); retrying in %.0fs", exc, sleep_seconds)
+                await asyncio.sleep(sleep_seconds)
+                retry_seconds = min(retry_seconds * 2, self.max_retry_seconds)
+            else:
+                await asyncio.sleep(0.1)
 
 
 # Create our own OrderData class to pass to the API because this is easier to work with
@@ -155,6 +212,9 @@ class Alpaca(Broker):
         self.oauth_token = ""
         self.is_paper = False
         self.polling_interval = polling_interval
+        self._stream_fallback_poll_thread = None
+        self._stream_fallback_poll_started = False
+        self._stream_fallback_poll_interval = max(float(polling_interval or 0), 15.0)
 
         # Set the config values
         self._update_attributes_from_config(config)
@@ -1354,7 +1414,7 @@ class Alpaca(Broker):
         elif self.api_key and self.api_secret:
             # Traditional API key/secret authentication
             logger.debug("Alpaca Stream: Using TradingStream for API key/secret authentication")
-            return TradingStream(self.api_key, self.api_secret, paper=self.is_paper)
+            return BackoffTradingStream(self.api_key, self.api_secret, paper=self.is_paper)
         else:
             raise ValueError("Either OAuth token or API key/secret must be provided for Alpaca authentication")
 
@@ -1430,10 +1490,16 @@ class Alpaca(Broker):
 
     def do_polling(self):
         """
-        This function is called every polling_interval for OAuth-only configurations.
+        This function is called every polling_interval for OAuth-only configurations
+        and by API-key fallback polling while the trading websocket is down.
         It checks for new orders and dispatches them to the stream for processing.
         Similar to Tradier's polling implementation.
         """
+        def _field(source, name, default=None):
+            if isinstance(source, dict):
+                return source.get(name, default)
+            return getattr(source, name, default)
+
         try:
             # Get the strategy from the broker's registered strategies
             strategy = None
@@ -1466,8 +1532,8 @@ class Alpaca(Broker):
                 if order.identifier in stored_orders:
                     stored_order = stored_orders[order.identifier]
 
-                    # Check if the status has changed
-                    if stored_order.status != order.status:
+                    # Check if the status has changed, accounting for broker/LumiBot aliases.
+                    if not stored_order.equivalent_status(order.status):
                         logger.debug(f"OAuth Polling: Order status changed - {order.identifier}: {stored_order.status} -> {order.status}")
 
                         # Update the stored order with new data and dispatch the event
@@ -1476,44 +1542,51 @@ class Alpaca(Broker):
                         # Capture and propagate average filled price from Alpaca into the stored order
                         try:
                             avg_price = (
-                                getattr(alpaca_order, 'filled_avg_price', None)
-                                or getattr(alpaca_order, 'avg_fill_price', None)
+                                _field(alpaca_order, 'filled_avg_price')
+                                or _field(alpaca_order, 'avg_fill_price')
                             )
                             if avg_price is not None:
                                 stored_order.avg_fill_price = avg_price
                         except Exception:
                             pass
 
-                        # Dispatch the appropriate event based on the new status
+                        # Dispatch the appropriate event based on the new status.
                         if order.status == "filled" or order.status == "fill": 
                             # Get price and quantity with proper fallbacks for Alpaca API
-                            price = (getattr(alpaca_order, 'filled_avg_price', None) or
-                                   getattr(alpaca_order, 'avg_fill_price', None) or
+                            price = (_field(alpaca_order, 'filled_avg_price') or
+                                   _field(alpaca_order, 'avg_fill_price') or
+                                   getattr(order, 'avg_fill_price', None) or
                                    getattr(order, 'limit_price', None))
-                            filled_qty = (getattr(alpaca_order, 'filled_qty', None) or
-                                        getattr(alpaca_order, 'qty', None) or
+                            filled_qty = (_field(alpaca_order, 'filled_qty') or
+                                        _field(alpaca_order, 'qty') or
                                         getattr(order, 'quantity', None))
-                            self.stream.dispatch(self.FILLED_ORDER, order=stored_order, price=price, filled_quantity=filled_qty)
+                            self._dispatch_polled_order_event(self.FILLED_ORDER, stored_order, price=price, filled_quantity=filled_qty)
                         elif order.status == "partially_filled":
                             # Get price and quantity with proper fallbacks for Alpaca API
-                            price = (getattr(alpaca_order, 'filled_avg_price', None) or
-                                   getattr(alpaca_order, 'avg_fill_price', None) or
+                            price = (_field(alpaca_order, 'filled_avg_price') or
+                                   _field(alpaca_order, 'avg_fill_price') or
+                                   getattr(order, 'avg_fill_price', None) or
                                    getattr(order, 'limit_price', None))
-                            filled_qty = (getattr(alpaca_order, 'filled_qty', None) or
-                                        getattr(alpaca_order, 'qty', None) or
+                            filled_qty = (_field(alpaca_order, 'filled_qty') or
+                                        _field(alpaca_order, 'qty') or
                                         getattr(order, 'quantity', None))
-                            self.stream.dispatch(self.PARTIALLY_FILLED_ORDER, order=stored_order, price=price, filled_quantity=filled_qty)
+                            self._dispatch_polled_order_event(
+                                self.PARTIALLY_FILLED_ORDER,
+                                stored_order,
+                                price=price,
+                                filled_quantity=filled_qty,
+                            )
                         elif order.status == "canceled":
-                            self.stream.dispatch(self.CANCELED_ORDER, order=stored_order)
+                            self._dispatch_polled_order_event(self.CANCELED_ORDER, stored_order)
                         elif order.status == "new":
-                            self.stream.dispatch(self.NEW_ORDER, order=stored_order)
+                            self._dispatch_polled_order_event(self.NEW_ORDER, stored_order)
                     else:
                         # Status hasn't changed, but update the status to match broker's
                         stored_order.status = order.status
 
             # Check for orders that are no longer in the broker's list
             tracked_orders = {x.identifier: x for x in self.get_tracked_orders()}
-            broker_ids = [getattr(o, 'id', None) for o in raw_orders if hasattr(o, 'id')]
+            broker_ids = [_field(o, 'id') for o in raw_orders if _field(o, 'id') is not None]
 
             logger.debug(f"OAuth Polling: Checking {len(tracked_orders)} tracked orders against {len(broker_ids)} broker order IDs")
 
@@ -1524,18 +1597,19 @@ class Alpaca(Broker):
                     try:
                         # Try to fetch this specific order from Alpaca
                         individual_order = self.api.get_order_by_id(order_id)
-                        logger.debug(f"OAuth Polling: Individual lookup found order {order_id} with status {individual_order.status}")
+                        individual_status = _field(individual_order, "status")
+                        logger.debug(f"OAuth Polling: Individual lookup found order {order_id} with status {individual_status}")
 
                         # Update status based on individual lookup
-                        if individual_order.status != order.status:
-                            logger.debug(f"OAuth Polling: Individual order status changed - {order_id}: {order.status} -> {individual_order.status}")
+                        if not order.equivalent_status(individual_status):
+                            logger.debug(f"OAuth Polling: Individual order status changed - {order_id}: {order.status} -> {individual_status}")
                             order.update_raw(individual_order)
 
                             # Capture and propagate average filled price for individual lookup
                             try:
                                 avg_price = (
-                                    getattr(individual_order, 'filled_avg_price', None)
-                                    or getattr(individual_order, 'avg_fill_price', None)
+                                    _field(individual_order, 'filled_avg_price')
+                                    or _field(individual_order, 'avg_fill_price')
                                 )
                                 if avg_price is not None:
                                     order.avg_fill_price = avg_price
@@ -1543,23 +1617,24 @@ class Alpaca(Broker):
                                 pass
 
                             # Dispatch appropriate event based on new status
-                            if individual_order.status in ["filled", "fill"]:
+                            if individual_status in ["filled", "fill"]:
                                 # Get price and quantity with proper fallbacks for Alpaca API
-                                price = (getattr(individual_order, 'filled_avg_price', None) or
-                                       getattr(individual_order, 'avg_fill_price', None) or
+                                price = (_field(individual_order, 'filled_avg_price') or
+                                       _field(individual_order, 'avg_fill_price') or
+                                       getattr(order, 'avg_fill_price', None) or
                                        getattr(order, 'limit_price', None))
-                                filled_qty = (getattr(individual_order, 'filled_qty', None) or
-                                            getattr(individual_order, 'qty', None) or
+                                filled_qty = (_field(individual_order, 'filled_qty') or
+                                            _field(individual_order, 'qty') or
                                             getattr(order, 'quantity', None))
-                                self.stream.dispatch(self.FILLED_ORDER, order=order, price=price, filled_quantity=filled_qty)
-                            elif individual_order.status == "canceled":
-                                self.stream.dispatch(self.CANCELED_ORDER, order=order)
+                                self._dispatch_polled_order_event(self.FILLED_ORDER, order, price=price, filled_quantity=filled_qty)
+                            elif individual_status == "canceled":
+                                self._dispatch_polled_order_event(self.CANCELED_ORDER, order)
 
                     except Exception as e:
                         if "404" in str(e) or "not found" in str(e).lower():
                             # Order truly doesn't exist - it was cancelled/rejected
                             logger.debug(f"OAuth Polling: Order {order_id} not found at broker, marking as cancelled")
-                            self.stream.dispatch(self.CANCELED_ORDER, order=order)
+                            self._dispatch_polled_order_event(self.CANCELED_ORDER, order)
                         else:
                             # Network/API error - don't assume anything, just log and continue
                             logger.debug(f"OAuth Polling: Could not verify order {order_id}: {e}")
@@ -1602,6 +1677,64 @@ class Alpaca(Broker):
                     logger.error(f"OAuth Polling error: {e}", exc_info=True)
         # No need to schedule next poll - PollingStream handles this automatically via timeout
 
+    def _dispatch_polled_order_event(self, type_event, order, price=None, filled_quantity=None):
+        """Process an order event found by Alpaca REST polling."""
+        if order is None:
+            return
+        multiplier = getattr(getattr(order, "asset", None), "multiplier", 1)
+        self._process_trade_event(
+            order,
+            type_event,
+            price=price,
+            filled_quantity=filled_quantity,
+            multiplier=multiplier,
+        )
+
+    def _is_trading_stream_healthy(self):
+        """Return whether the Alpaca websocket is currently consuming updates."""
+        stream = getattr(self, "stream", None)
+        if stream is None:
+            return False
+        if isinstance(stream, PollingStream):
+            return True
+        return bool(getattr(stream, "is_connected", False))
+
+    def _start_stream_fallback_polling(self):
+        """Start REST order-status polling for API-key streams when websocket updates are unavailable."""
+        if self.is_oauth_only or self._stream_fallback_poll_started:
+            return
+
+        self._stream_fallback_poll_started = True
+        self._stream_fallback_poll_thread = Thread(
+            target=self._stream_fallback_polling_loop,
+            daemon=True,
+            name=f"{self.name}_alpaca_stream_fallback_poll",
+        )
+        self._stream_fallback_poll_thread.start()
+
+    def _stream_fallback_polling_loop(self):
+        """Poll Alpaca order status while the websocket stream is down."""
+        was_polling = False
+        while not self._stop_event.is_set():
+            if self._is_trading_stream_healthy():
+                was_polling = False
+                time.sleep(self._stream_fallback_poll_interval)
+                continue
+
+            if not was_polling:
+                logger.warning(
+                    "Alpaca trading stream is unavailable; using REST order-status polling every %.0fs",
+                    self._stream_fallback_poll_interval,
+                )
+                was_polling = True
+
+            try:
+                self.do_polling()
+            except Exception as exc:
+                logger.warning("Alpaca fallback order-status polling failed: %s", exc, exc_info=True)
+
+            time.sleep(self._stream_fallback_poll_interval)
+
     def _run_stream(self):
         """Run the broker stream - either polling or WebSocket streaming depending on authentication method"""
 
@@ -1615,6 +1748,8 @@ class Alpaca(Broker):
                 logger.error(traceback.format_exc())
         else:
             # For API key/secret, use traditional WebSocket streaming
+            self._start_stream_fallback_polling()
+
             async def _trade_update(trade_update):
                 try:
                     logged_order = trade_update.order

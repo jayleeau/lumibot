@@ -1452,6 +1452,9 @@ class StrategyExecutor(Thread):
         if units not in "TSMHDsmhd":
             raise ValueError(sleeptime_err_msg)
 
+        market_name = getattr(self.broker, "market", None)
+        is_continuous_market = bool(market_name and self._is_continuous_market(market_name))
+
         # Assign the raw time to the target count for cron jobs so that later we can compare the current count to the
         # target count.
         self.cron_count_target = time_raw
@@ -1482,9 +1485,33 @@ class StrategyExecutor(Thread):
         elif units in "Dd":
             kwargs["day"] = "*"
 
-            # Start immediately (at the closest minute) if force_start_immediately is True
-            # or if the market is currently open
-            if force_start_immediately or self.broker.is_market_open():
+            should_anchor_daily_to_market_open = (
+                not self.strategy.is_backtesting
+                and not is_continuous_market
+                and not force_start_immediately
+            )
+
+            if should_anchor_daily_to_market_open:
+                # Daily live strategies should not drift to the process restart time. Anchor
+                # the cron schedule to the broker calendar's regular session open instead.
+                open_time_this_day = self.broker.utc_to_local(self.broker.market_hours(close=False, next=False))
+                hour = open_time_this_day.hour
+                minute = open_time_this_day.minute
+                second = min(open_time_this_day.second + 5, 59)
+
+                kwargs.pop("day", None)
+                kwargs["day_of_week"] = "mon-fri"
+                kwargs["hour"] = f"0{hour}" if hour < 10 else str(hour)
+                kwargs["minute"] = f"0{minute}" if minute < 10 else str(minute)
+                kwargs["second"] = f"0{second}" if second < 10 else str(second)
+
+                self.strategy.logger.info(
+                    f"The strategy will run at {kwargs['hour']}:{kwargs['minute']}:{kwargs['second']} every trading day. "
+                    f"Daily live runs are anchored to the market session open so restarts do not shift the cadence."
+                )
+
+            # Start immediately (at the closest minute) if force_start_immediately is True.
+            elif force_start_immediately or self.broker.is_market_open():
                 # Get the current time in local timezone
                 local_time = datetime.now().astimezone()
 

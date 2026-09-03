@@ -13,6 +13,7 @@ Features
 * **Advanced Orders**: Bracket orders, one-cancels-other (OCO), one-triggers-other (OTO)
 * **Multi-leg Options**: Support for complex options strategies
 * **Live Streaming**: Real-time trade updates and market data
+* **Stream Resilience**: REST order-status polling keeps fill/cancel tracking current if the Alpaca trading stream is temporarily unavailable
 * **Cash Events**: Live cloud payloads can include normalized broker cash events such as deposits, withdrawals, interest, dividends, fees, journals, and adjustments
 
 Getting Started
@@ -135,6 +136,11 @@ All configuration should be done via environment variables in your `.env` file:
      - bool
      - ``true``
      - Toggle paper trading (``true``) versus live trading (``false``).
+
+Live Order Tracking
+-------------------
+
+Lumibot normally receives Alpaca order updates from Alpaca's trading stream. If that stream disconnects or is temporarily rate-limited, Lumibot backs off reconnect attempts and uses Alpaca's REST order endpoints as a read-only fallback. Order submission still uses the normal REST submit path, and the fallback only updates local order, fill, cancel, and position tracking from broker state.
 
 Usage Examples
 --------------
