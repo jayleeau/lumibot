@@ -93,6 +93,29 @@ def test_dump_stats_end_to_end_regression_for_datetime_indexes():
     assert isinstance(pd.Timestamp(strat._strategy_returns_df.index[0]), pd.Timestamp)
 
 
+def test_dump_stats_uses_final_same_timestamp_state_and_preserves_fees() -> None:
+    """Duplicate fill-time rows must not omit same-timestamp trading costs."""
+    broker = PandasDataBacktesting(
+        datetime_start=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        datetime_end=datetime(2026, 1, 3, tzinfo=timezone.utc),
+    )
+    strat = _StatsOnlyStrategy(broker=BacktestingBroker(data_source=broker))
+    strat._benchmark_asset = None
+    stamp = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    strat._append_row({"datetime": stamp, "portfolio_value": 100_000.0})
+    strat._append_row({"datetime": stamp, "portfolio_value": 99_000.0})
+    strat._append_row({
+        "datetime": stamp + timedelta(days=1),
+        "portfolio_value": 101_000.0,
+    })
+
+    strat._dump_stats()
+
+    assert len(strat._strategy_returns_df) == 2
+    assert float(strat._strategy_returns_df.iloc[0]["portfolio_value"]) == 99_000.0
+    assert abs(float(strat._analysis["total_return"]) - 0.01) < 1e-12
+
+
 def test_dump_stats_emits_parquet_file_when_stats_file_is_set(tmp_path) -> None:
     broker = PandasDataBacktesting(
         datetime_start=datetime(2026, 1, 1, tzinfo=timezone.utc),

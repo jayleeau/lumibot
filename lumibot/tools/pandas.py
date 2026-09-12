@@ -6,8 +6,9 @@ import numpy as np
 
 
 def day_deduplicate(df_):
+    """Keep the final portfolio state recorded at each exact timestamp."""
     df_copy = df_.copy()
-    df_copy = df_copy.groupby(level=0).head(1)
+    df_copy = df_copy.groupby(level=0).tail(1)
 
     return df_copy
 

@@ -2,7 +2,7 @@
 
 > A practical, evidence-driven guide to **measuring**, **debugging**, and **improving** backtesting performance end‑to‑end (strategy → data → cache → artifacts → UI), while preserving broker‑like correctness.
 
-**Last Updated:** 2026-08-03
+**Last Updated:** 2026-09-12
 **Status:** Active  
 **Audience:** Developers, AI Agents (engineering docs)  
 
@@ -39,6 +39,71 @@ Backtesting performance problems in LumiBot rarely have a single cause. “Slow 
 This document is a **brain dump** of what we’ve learned while improving performance across option-heavy backtests (NVDA/SPX/Strategy Library demos), and it codifies the workflows, measurement discipline, and architectural principles that keep speed work from turning into correctness regressions.
 
 > **Core principle:** Accuracy / realism comes first. Speed work must not change strategy semantics silently.
+
+## Cached native-engine suite
+
+`scripts/run_full_lumibot_backtests.py` is the reproducible local runner for the
+cached strategy comparison. It loads the adjusted DuckDB archives, computes
+indicators once, and invokes `Strategy.run_backtest` separately for the
+mean-reversion, gap, and hourly trend-stop strategies. Orders, native market
+and stop fills, fees, portfolio marks, and LumiBot analysis remain on the
+native `BacktestingBroker` path.
+
+The suite has one execution contract across the native and research paths:
+
+- daily indicators use session D only after D has closed, then execute at the
+  D+1 open;
+- the hourly strategy ranks from the prior completed daily session, uses the
+  completed 09:00 ET hourly bar, and executes at the 10:00 ET bar open;
+- resting sell stops trigger from the bar low, fill at the stop unless the bar
+  opens below it, and apply a trailing-stop update only on the following bar;
+- the 7 bps cost assumption is combined round trip, implemented as 3.5 bps on
+  each side;
+- adjusted cached prices are passed with ``auto_adjust=False`` so splits are
+  applied exactly once;
+- every strategy uses whole shares and 5% annual debit financing; and
+- suite metrics use an explicit 0% risk-free rate so reruns do not depend on a
+  later Treasury-rate lookup.
+
+Daily parent fills create their stop after the entry fill. With daily OHLCV,
+that child becomes eligible on the following session because the engine cannot
+know whether the entry or the session low occurred first. Use intraday data when
+entry-session stop ordering matters.
+
+The default window is the common six-year interval supported by both archives:
+
+```bash
+DATADOWNLOADER_BASE_URL="${DATADOWNLOADER_BASE_URL:-http://localhost:8080}" \
+DATADOWNLOADER_API_KEY="${DATADOWNLOADER_API_KEY:-local-cache}" \
+BACKTESTING_DATA_SOURCE=none \
+BACKTESTING_CAPTURE_LOCALS=false \
+.venv/bin/python scripts/run_full_lumibot_backtests.py
+```
+
+Results are written to `reports/full_lumibot_corrected_2020_2026/`. The runner
+uses a $100,000 starting balance and no benchmark. The hourly strategy maps the
+archive's 09:00–15:00 America/New_York bars onto the NYSE session clock; its
+strategy decisions use only completed hourly and daily bars.
+
+After a run, compare the research and native trade streams directly:
+
+```bash
+.venv/bin/python scripts/compare_strategy_backtest_parity.py \
+  --report-dir reports/full_lumibot_corrected_2020_2026 \
+  --start 2020-09-08 \
+  --end 2026-09-08
+```
+
+The comparison groups independent fills within a timestamp, then checks fill
+count, timestamp, symbol, side, price, whole-share quantity, and fees to the
+cent for all three strategies. The hourly research path uses the same cash
+ledger and financing assumptions as the native run. A metrics match without
+fill parity is not accepted as evidence of equivalent logic.
+
+When multiple lifecycle snapshots share a simulated timestamp, analysis keeps
+the final state and rebuilds returns from the deduplicated equity path. Keeping
+the first snapshot can silently omit fees applied by fills later at that same
+timestamp and materially overstate total return and Sharpe.
 
 ---
 

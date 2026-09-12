@@ -2123,6 +2123,13 @@ class StrategyExecutor(Thread):
 
         if self.broker.IS_BACKTESTING_BROKER:
             self.broker.process_pending_orders(strategy=self.strategy)
+            # Daily Pandas iterations do not call safe_sleep(), which is the
+            # normal intraday event-queue drain. Apply synchronous fill events
+            # now so cash and positions are final before this timestamp's
+            # post-fill stats snapshot is recorded.
+            self.process_queue()
+            self.strategy._update_portfolio_value()
+            self._trace_stats(self._strategy_context, {})
 
     def _should_continue_trading_loop(self, jobs, is_continuous_market, should_we_stop):
         """Determine if the trading loop should continue based on various conditions"""
@@ -2428,9 +2435,19 @@ class StrategyExecutor(Thread):
             except Exception:
                 pass
 
+        # Run the strategy's close hook before the broker evaluates the final
+        # bar. At the exact simulated close ``is_market_open()`` is already
+        # false, even though ``await_market_to_close()`` has not processed that
+        # bar yet. Backtests must therefore run the hook at that boundary so a
+        # strategy can apply an update derived from the preceding completed bar
+        # before a resting order is tested against the close bar.
+        current_date = self.strategy.get_datetime().date()
+        close_hook_due = self.lifecycle_last_date["before_market_closes"] != current_date
+        if close_hook_due and (self.strategy.is_backtesting or self.broker.is_market_open()):
+            self._before_market_closes()
+            self.lifecycle_last_date["before_market_closes"] = current_date
+
         self.strategy.await_market_to_close()
-        if self.broker.is_market_open():
-            self._before_market_closes()  # perhaps the user could set the time of day based on their data that the market closes?
 
         self.strategy.await_market_to_close(timedelta=0)
 

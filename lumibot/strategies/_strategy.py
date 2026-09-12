@@ -2433,6 +2433,29 @@ class _Strategy:
 
             self._strategy_returns_df = day_deduplicate(self._stats)
 
+            # Lifecycle and fill callbacks can record multiple portfolio states
+            # at one timestamp. Deduplication keeps the final state, so rebuild
+            # returns from the resulting equity path instead of retaining a
+            # per-row return whose prior row may have been removed. Preserve the
+            # first raw equity value as the analysis baseline so same-timestamp
+            # entry fees remain in total return.
+            value_column = (
+                "cash_adjusted_portfolio_value"
+                if "cash_adjusted_portfolio_value" in self._strategy_returns_df
+                else "portfolio_value"
+            )
+            analysis_values = pd.to_numeric(
+                self._strategy_returns_df[value_column], errors="coerce"
+            )
+            raw_values = pd.to_numeric(self._stats[value_column], errors="coerce").dropna()
+            if not raw_values.empty and not analysis_values.dropna().empty:
+                rebuilt_returns = analysis_values.pct_change()
+                first_index = analysis_values.first_valid_index()
+                rebuilt_returns.loc[first_index] = (
+                    float(analysis_values.loc[first_index]) / float(raw_values.iloc[0]) - 1.0
+                )
+                self._strategy_returns_df["return"] = rebuilt_returns
+
             self._analysis = stats_summary(self._strategy_returns_df, self.risk_free_rate)
 
             # Get performance for the benchmark asset

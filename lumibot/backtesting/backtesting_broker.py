@@ -663,16 +663,12 @@ class BacktestingBroker(Broker):
         return delta_seconds
 
     def _await_market_to_open(self, timedelta=None, strategy=None):
-        # Process outstanding orders first before waiting for market to open
-        # or else they don't get processed until the next day
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(
                 "[BROKER DEBUG] _await_market_to_open called, current datetime=%s, timedelta=%s",
                 self.datetime,
                 timedelta,
             )
-        self.process_pending_orders(strategy=strategy)
-
         time_to_open = self.get_time_to_open()
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug("[BROKER DEBUG] get_time_to_open returned: %s", time_to_open)
@@ -701,6 +697,14 @@ class BacktestingBroker(Broker):
                     time_to_open,
                 )
             return
+
+        # Process the current bar before advancing. If the clock is already at
+        # the next open, leave pending orders for the normal sequence of
+        # strategy callback -> order processing. Processing here would let an
+        # overnight stop fill before the strategy can apply indicators from the
+        # prior completed session, and a pre-open buffer could select a future
+        # opening bar.
+        self.process_pending_orders(strategy=strategy)
 
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug("[BROKER DEBUG] Advancing time by %s seconds", time_to_open)

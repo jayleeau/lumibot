@@ -1,5 +1,11 @@
 # BACKTESTING_ARCHITECTURE.md - LumiBot Backtesting Architecture
 
+Architecture and accuracy invariants for LumiBot data, simulation, and fills.
+
+**Last Updated:** 2026-09-12
+**Status:** Active
+**Audience:** Developers and AI agents
+
 ## 🚨🚨🚨 RULE #1: NEVER FABRICATE DATA. MISSING > FAKE. 🚨🚨🚨
 
 **Fabricated / synthesized / "placeholder-filled" price or volume data is STRICTLY FORBIDDEN in every backtesting code path.**
@@ -41,6 +47,33 @@ If the backtest execution model (data semantics, fill model, order handling, fee
 We optimize for:
 1) **Accuracy / realism first** (broker-like behavior; no hidden optimism or lookahead leaks)
 2) **Speed second** (make it fast *without changing semantics*)
+
+## Completed-bar execution contract
+
+A strategy decision and its execution must have distinct timestamps whenever
+the decision uses a bar close. A daily signal from session D can first execute
+at the D+1 open. An hourly signal from the 09:00 ET bar can first execute at the
+next hourly bar open. Portfolio sizing must use cash and completed-bar marks;
+the current execution bar's close is unavailable at its open.
+
+For sell stops, the native OHLC fill rule is conservative and deterministic:
+the bar low triggers the stop, a gap below the stop fills at the bar open, and
+otherwise the fill is the stop price. A trailing value calculated from a bar's
+close becomes active on the following bar. A child stop created by a daily
+market entry is likewise eligible on the following daily bar because daily
+OHLCV does not identify whether the low occurred before or after the entry.
+Intraday input is required to model that ordering within the entry session.
+
+Vectorization may prepare indicators, ranks, session maps, and immutable signal
+tables. The serial broker loop still owns cash, whole-share quantities, fees,
+financing, order state, stop activation, and fills. Research accelerators must
+pass fill-level parity against that serial path before their aggregate metrics
+are used for strategy decisions.
+
+Stats may contain several lifecycle snapshots at one exact timestamp. Analysis
+uses the final snapshot and recalculates period returns from that deduplicated
+equity series. This preserves fees and other cash changes recorded after an
+earlier snapshot at the same simulated time.
 
 ## Related Docs
 
@@ -362,7 +395,7 @@ From the backtest `*_stats.csv`:
 These are **manual acceptance backtests** run from the Strategy Library (do not edit the demo strategies). They validate the full data → pricing → order simulation pipeline, not just unit tests.
 
 Artifacts are written to:
-- `/Users/robertgrzesik/Documents/Development/Strategy Library/logs/`
+- `<strategy-library>/logs/`
 
 These same demo scripts are also executed in GitHub CI as normal `pytest` tests (copies live under
 `tests/backtest/acceptance_strategies/` and are run by `tests/backtest/test_acceptance_backtests_ci.py`).
@@ -819,18 +852,18 @@ LUMIBOT_CACHE_MODE=readwrite
 
 If seeing wrong prices:
 1. Bump `LUMIBOT_CACHE_S3_VERSION`
-2. Clear local cache: `rm -rf ~/Library/Caches/lumibot/`
-3. Re-run backtest to fetch fresh data
+2. Use a fresh local cache namespace rather than deleting a shared cache
+3. Re-run the affected symbol and window to fetch fresh data
 
 ## File Locations Summary
 
 | Component | Location |
 |-----------|----------|
-| LumiBot library | `/Users/robertgrzesik/Documents/Development/lumivest_bot_server/strategies/lumibot/` |
-| Strategy Library | `/Users/robertgrzesik/Documents/Development/Strategy Library/` |
-| Demo strategies | `/Users/robertgrzesik/Documents/Development/Strategy Library/Demos/` |
-| Log output | `/Users/robertgrzesik/Documents/Development/Strategy Library/logs/` |
-| Local cache | `~/Library/Caches/lumibot/` |
+| LumiBot library | `<repo>/` |
+| Strategy Library | `<strategy-library>/` |
+| Demo strategies | `<strategy-library>/Demos/` |
+| Log output | `<strategy-library>/logs/` |
+| Local cache | `$LUMIBOT_CACHE_FOLDER` |
 
 ## See Also
 

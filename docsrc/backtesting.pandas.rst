@@ -15,6 +15,60 @@ Additionally, with Pandas backtester, it is possible to backtest stocks, stock-l
 
 Pandas backtester is the most flexible backtester in Lumibot, but it is also the most difficult to use. It is intended for advanced users who have their own data and want to use it with Lumibot.
 
+Native cached runs
+------------------
+
+When a local DuckDB archive is already available, the same native LumiBot
+execution path can be used without downloading data again. The repository
+runner ``scripts/run_full_lumibot_backtests.py`` converts cached OHLCV frames
+into ``Data`` objects, performs indicator preparation once, and calls
+``Strategy.run_backtest`` for each strategy. LumiBot still handles simulated
+time, order lifecycle, market and stop fills, fees, portfolio valuation, and
+the standard analysis artifacts.
+
+The companion research path uses whole-share cash accounting, matching fees
+and financing, and can be checked with
+``scripts/compare_strategy_backtest_parity.py``. The comparison verifies fill
+time, symbol, side, price, quantity, and fee for every fill.
+
+Run it with the downloader variables set in the environment (the local cache
+runner does not contact a provider):
+
+.. code-block:: bash
+
+    DATADOWNLOADER_BASE_URL="${DATADOWNLOADER_BASE_URL:-http://localhost:8080}" \
+    DATADOWNLOADER_API_KEY="${DATADOWNLOADER_API_KEY:-local-cache}" \
+    BACKTESTING_DATA_SOURCE=none \
+    .venv/bin/python scripts/run_full_lumibot_backtests.py
+
+The generated native stats, trades, settings, and metric files are stored under
+``reports/full_lumibot_corrected_2020_2026/``. Use a common interval covered by every
+instrument archive and include sufficient pre-start rows in each ``Data``
+object for indicator warmup.
+
+Signals derived from a close must be shifted to a later execution bar. For
+example, a daily signal from session D can first submit for the D+1 open. An
+hourly close signal can first execute at the following hourly open. Do not size
+an open order from the execution bar's close; value positions from the latest
+completed bar instead.
+
+Native sell stops use the bar low as the trigger. They fill at the stop price,
+or at the bar open when it gaps below the stop. A trailing stop calculated from
+a completed close becomes active on the next bar. With daily-only OHLCV, a stop
+child created after an entry fill becomes eligible on the following daily bar;
+intraday data is required to determine entry-versus-low ordering inside the
+entry session.
+
+Keep cost units explicit. A combined 7 basis-point round trip means 3.5 basis
+points on the buy and 3.5 basis points on the sell. If cached prices are already
+split-adjusted, pass ``auto_adjust=False`` to avoid applying adjustments twice.
+When several lifecycle events record portfolio snapshots at the same simulated
+timestamp, LumiBot uses the final snapshot and rebuilds analysis returns from
+the resulting equity path. This keeps fill fees and other same-timestamp account
+changes in total return, drawdown, volatility, and Sharpe.
+The repository suite also fixes ``risk_free_rate=0.0`` so its Sharpe result is
+reproducible rather than depending on a later Treasury-rate lookup.
+
 Start by importing the Pandas backtester as follows:
 
 .. code-block:: python

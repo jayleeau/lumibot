@@ -37,6 +37,14 @@
 - Corrected README and package license labels to match the existing GPLv3 LICENSE file; the license text is unchanged.
 
 ### Fixed
+- Cached strategy comparison runners now separate completed signal bars from
+  next-open execution, use low-triggered gap-aware stops, interpret 7 bps as a
+  combined round trip, use matching whole-share cash accounting, and verify
+  native/research prices, quantities, and fees at fill level.
+- Backtest analysis now keeps the final portfolio snapshot at duplicate
+  timestamps and rebuilds returns from the deduplicated equity path. Fill fees
+  recorded later at the same timestamp are no longer omitted from total return,
+  volatility, drawdown, or Sharpe.
 - A failed tool attempt followed by a successful retry of the same tool is
   classified as recovered. Unrecovered or final tool failures still produce a
   structured ``tool_error`` outcome.

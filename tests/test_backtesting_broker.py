@@ -1037,7 +1037,10 @@ class TestBacktestingBrokerTimeAdvance(unittest.TestCase):
         self.broker._await_market_to_open(strategy=self.mock_strategy)
 
         # Assertions
-        self.broker.process_pending_orders.assert_called_once_with(strategy=self.mock_strategy)
+        # Correctness change (2026-09): once the clock is already open, pending
+        # orders wait for the normal strategy-callback-then-fill sequence. This
+        # prevents overnight stops from filling before completed-session updates.
+        self.broker.process_pending_orders.assert_not_called()
         self.broker.get_time_to_open.assert_called_once()
         # _update_datetime should NOT be called because time_to_open is 0
         self.broker._update_datetime.assert_not_called()
@@ -1056,7 +1059,9 @@ class TestBacktestingBrokerTimeAdvance(unittest.TestCase):
         self.broker._await_market_to_open(timedelta=buffer_minutes, strategy=self.mock_strategy)
 
         # Assertions
-        self.broker.process_pending_orders.assert_called_once_with(strategy=self.mock_strategy)
+        # Correctness change (2026-09): a non-positive pre-open wait must not
+        # price pending orders from a future opening bar.
+        self.broker.process_pending_orders.assert_not_called()
         self.broker.get_time_to_open.assert_called_once()
         # _update_datetime should NOT be called because calculated time_to_open is <= 0
         self.broker._update_datetime.assert_not_called()
