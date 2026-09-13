@@ -27,6 +27,7 @@ from strategy_lab.alternative_strategies import (
     build_alternative_candidates,
 )
 from strategy_lab.experiment_config import (
+    EXECUTION_ENGINE,
     KIND_ALTERNATIVE,
     KIND_CONTROL,
     KIND_HTS,
@@ -165,6 +166,10 @@ class ExperimentRegistry:
             "human-readable name, a family, and a fingerprint over the fully resolved parameter "
             "set. Address a candidate by ID in any runner, artifact path, or conversation.",
             "",
+            f"Execution engine of record: `{EXECUTION_ENGINE}` (`PandasDataBacktesting` plus "
+            "`BacktestingBroker`). The retired custom local replay qualifies nothing and is not "
+            "part of this catalog's execution path.",
+            "",
             "The audited control `HTS_CONTROL_1` is listed separately and is **not** counted as a "
             f"variation. Totals: {stats['total']} configurations = 1 control + 100 HTS "
             "variations + 10 alternative strategies.",
@@ -236,8 +241,9 @@ class ExperimentRegistry:
         if deferred:
             lines.extend(("## Implementation prerequisites", ""))
             lines.append(
-                "These candidates are registered but deferred pending native broker-order "
-                "lifecycle support: " + ", ".join(c.candidate_id for c in deferred) + "."
+                "These candidates are registered but deferred pending implementation of resting "
+                "protective stops in the native strategy plus an honest fill-fidelity report: "
+                + ", ".join(c.candidate_id for c in deferred) + "."
             )
             lines.append("")
         return "\n".join(lines).rstrip() + "\n"

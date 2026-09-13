@@ -12,6 +12,8 @@ Audience: Strategy developers and the strategy owner
 
 This catalog is generated from `strategy_lab/experiment_registry.py`; it is the authoritative index of the research plan's candidates. Each row has a stable ID, a human-readable name, a family, and a fingerprint over the fully resolved parameter set. Address a candidate by ID in any runner, artifact path, or conversation.
 
+Execution engine of record: `native-lumibot-backtesting` (`PandasDataBacktesting` plus `BacktestingBroker`). The retired custom local replay qualifies nothing and is not part of this catalog's execution path.
+
 The audited control `HTS_CONTROL_1` is listed separately and is **not** counted as a variation. Totals: 111 configurations = 1 control + 100 HTS variations + 10 alternative strategies.
 
 Planning source: `docs/HTS_100_VARIATIONS_RESEARCH_PLAN.md`. Registration is not authorization to run: no backtest, paper session, or broker order is authorized by this catalog.
@@ -435,4 +437,4 @@ The first thirty minutes may establish a level that later momentum continues thr
 
 ## Implementation prerequisites
 
-These candidates are registered but deferred pending native broker-order lifecycle support: H039, H040, H100.
+These candidates are registered but deferred pending implementation of resting protective stops in the native strategy plus an honest fill-fidelity report: H039, H040, H100.

@@ -28,6 +28,10 @@ from typing import Any, Iterable, Mapping, Sequence
 
 CONTRACT_ID = "hts_research_contract_1"
 
+# Execution engine of record. The custom local replay is retired to a read-only
+# historical diagnostic and never qualifies a candidate.
+EXECUTION_ENGINE = "native-lumibot-backtesting"
+
 KIND_CONTROL = "control"
 KIND_HTS = "hts"
 KIND_ALTERNATIVE = "alternative"

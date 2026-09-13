@@ -83,7 +83,10 @@ STARTING_IDS: frozenset[str] = frozenset(
     {"H052", "H053", "H059", "H060", "H063", "H068", "H086", "H089", "H098"}
 )
 DEFERRED_IDS: frozenset[str] = frozenset({"H039", "H040", "H100"})
-PROTECTIVE_ORDER_REQUIREMENT = "native-protective-order-lifecycle"
+# The native engine already models stop and stop-limit orders, so the remaining
+# prerequisite is implementing the resting stops in the native strategy and
+# reporting fill fidelity honestly.
+PROTECTIVE_ORDER_REQUIREMENT = "resting-stop-implementation-and-fill-fidelity"
 
 
 def _int(name: str, description: str, minimum: int, maximum: int, unit: str | None = None) -> ParameterSpec:

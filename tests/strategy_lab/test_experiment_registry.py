@@ -14,6 +14,7 @@ import pytest
 
 from strategy_lab.alternative_strategies import ALTERNATIVE_FAMILIES
 from strategy_lab.experiment_config import (
+    EXECUTION_ENGINE,
     InvalidParameterValueError,
     UnregisteredParameterError,
     all_parameter_specs,
@@ -146,7 +147,9 @@ def test_protective_order_candidates_are_deferred_with_a_requirement() -> None:
     for candidate_id in ("H039", "H040", "H100"):
         candidate = registry.get(candidate_id)
         assert candidate.priority == "deferred"
-        assert "native-protective-order-lifecycle" in candidate.data_requirements
+        # The native engine already models stop orders, so the remaining
+        # prerequisite is implementation plus fill-fidelity reporting.
+        assert "resting-stop-implementation-and-fill-fidelity" in candidate.data_requirements
 
 
 def test_h060_uses_the_economic_exposure_limit() -> None:
@@ -217,6 +220,10 @@ def test_catalog_document_is_in_sync_with_the_registry() -> None:
     assert text == get_registry().to_markdown(last_updated=match.group(1))
     for candidate_id in ("HTS_CONTROL_1", "H001", "H100", "A01", "A10"):
         assert candidate_id in text
+    # The catalog must name the engine of record and must not imply the retired
+    # custom replay is an execution path.
+    assert EXECUTION_ENGINE in text
+    assert "qualifies nothing" in text
 
 
 def test_build_registry_is_deterministic() -> None:

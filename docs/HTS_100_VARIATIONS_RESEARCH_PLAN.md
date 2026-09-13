@@ -1,20 +1,28 @@
 # Title: HTS Research Plan — 100 Variations and 10 Alternative Strategies
 
-Description: A fixed candidate catalog and implementation plan for causal, reproducible strategy experiments using the retained local cache.
+Description: A fixed candidate catalog and implementation plan for causal, reproducible strategy experiments executed by LumiBot's native backtesting engine over the retained local cache.
 
 Last Updated: 2026-09-13
-Status: Proposed; research and read-only inspection completed; strategies not implemented or run
+Status: Proposed (revised); execution engine settled as native LumiBot backtesting; strategies not implemented or run
 Audience: Strategy developers and the strategy owner
 
 ## Overview
 
 Build exactly **100 HTS candidates (H001–H100)** and **10 alternative strategies (A01–A10)**. Keep a separately versioned, audited HTS control outside those counts. Preserve the existing `hts_v1` artifacts as historical diagnostics. Do not revive the retired oracle engine.
 
-The objective is to find repeatable returns after costs with tolerable losses, rather than the largest Sharpe obtainable from a search. Proposed North Star: standard daily-return Sharpe of the predeclared walk-forward selection procedure, considered alongside worst drawdown, cost sensitivity, and uncertainty. Acceptance objectives: 100% accounting/causality/parity gates passing; every attempted candidate recorded; no finalist supported solely by one favorable window. A Sharpe above 2 is a hypothesis to test, not an implementation requirement.
+The objective is to find repeatable returns after costs with tolerable losses, rather than the largest Sharpe obtainable from a search. Proposed North Star: standard daily-return Sharpe of the predeclared walk-forward selection procedure, considered alongside worst drawdown, cost sensitivity, and uncertainty. Acceptance objectives: 100% accounting/causality/reproducibility gates passing; every attempted candidate recorded; no finalist supported solely by one favorable window. A Sharpe above 2 is a hypothesis to test, not an implementation requirement.
 
 The first 90 HTS candidates isolate particular rule families. H091–H095 test explicit universes/exposure restrictions; H096–H100 are five combinations chosen before looking at their results. They are not 100 copies with randomly changed numbers. Parameter interactions beyond these five belong to a separately counted later experiment.
 
 This document is a plan only. No backtest, paper session, broker order, package change, or deployment is authorized by execution of the research step itself.
+
+### Execution engine decision (2026-09-13)
+
+All candidates run on **LumiBot's native backtesting engine**, driven the way `scripts/run_full_lumibot_backtests.py` already drives it: `PandasDataBacktesting` plus `BacktestingBroker`, fed from the retained local archives, with each candidate implemented as a `lumibot.strategies.Strategy`. That engine owns simulated time, order lifecycle, stop orders, fills, fees, cash, positions, portfolio valuation, and the tearsheet report.
+
+The custom local replay (`scripts/backtest_hts_v1_local.py` over the `strategy_lab/hts_v1_core.py` ledger) is **retired from the execution path**. It is retained only as a read-only historical diagnostic for the already-published `hts_v1` artifacts. It is not a research engine, its numbers are not comparable to native results, and no candidate in this plan is qualified through it.
+
+This decision, rather than a repair, is what closes the replay's accounting defects: the ledger that had them no longer produces results. What the decision does **not** close is data quality and metric definition; those remain open and are listed at the end of section 2.
 
 ## 1. What the current code and cache actually contain
 
@@ -22,7 +30,7 @@ Inspected `strategy_lab/hts_v1_core.py`, `strategy_lab/hts_v1_strategy.py` throu
 
 The shared core currently selects up to two eligible symbols by 20-session return, requires price above its 20-session SMA and 63-session median dollar volume of at least $5 million, and uses a simple rolling 14-hour ATR with a 2× ATR trailing level. Intraday selection uses prior completed daily sessions. Stops are virtual: a completed hourly close at/below the previously active level creates a later market-exit intent. The local executor approximates that fill using the following hourly open. Configuration currently uses signal-hour label 9 and rebalance-hour label 10 in New York time; those labels are not yet a verified statement of bar completion times.
 
-The existing shared-core replay is a custom local ledger. It must not be described as a full native LumiBot backtest. Native LumiBot qualification remains a separate required step.
+The shared core remains the reference for signal definitions, but it is no longer the execution engine. Per the execution-engine decision above, candidates are implemented as native LumiBot strategies and the shared core's ledger is retired to a historical diagnostic. This removes the need to repair that ledger, and it also removes the separate "native qualification" step: the native run is the run.
 
 Read-only cache inventory on the date above:
 
@@ -35,9 +43,9 @@ These counts establish availability, not correctness or complete regular-session
 
 **Concrete cache anomaly:** daily rows labelled `IBIT` begin on 2022-09-08, whereas its hourly rows begin in January 2024. Nasdaq states the iShares Bitcoin Trust began listing on January 11, 2024. This requires instrument-ID, symbol-mapping, and pre-inception-row investigation; it does not establish how much any prior result was affected. Quarantine unresolved rows in a derived view, preserving the source cache. [Nasdaq listing notice](https://www.nasdaqtrader.com/TraderNews.aspx?id=ETP2024-04).
 
-## 2. Phase zero: blockers before trusting a large search
+## 2. Retired-replay defects (audit record) and what remains open
 
-These are observed code paths, not a completed estimate of their effect on old performance. Version repairs and rerun the control before claiming corrected Sharpe numbers.
+The table below is the original defect list from the custom local replay. It is retained as an audit record of why that ledger is not the research engine. The rows concerning missing-bar valuation, order lifecycle, sizing/buying power, and weekend financing are **closed by the execution-engine decision**, because native LumiBot's broker and portfolio own that accounting and are not being repaired here. They are not a to-do list.
 
 | Priority | Observation | Required implementation and acceptance evidence |
 |---|---|---|
@@ -52,6 +60,19 @@ These are observed code paths, not a completed estimate of their effect on old p
 | P1 | Final report does not explain remaining positions and stranded intents. | Publish marked terminal NAV, positions, stale marks, pending orders, and estimated liquidation costs separately. Never invent a terminal executable fill. |
 
 Data provenance also needs to establish what `XNAS_ITCH` coverage means for volume. An exchange-feed volume is not automatically consolidated market volume. Do not use it as total-market capacity without validation. A present-day list of 57 symbols is a fixed research universe, not a historical investable-universe reconstruction; identify survivorship/selection bias explicitly.
+
+### What remains open under the native-engine decision
+
+Switching engines closes the accounting defects and shortens the blocker list to four items. These are data and definition problems, not ledger bugs, and they have to be settled before a large search is ranked.
+
+| Priority | Open item | Why it is still open, and what closes it |
+|---|---|---|
+| P0 | **Metric definition.** LumiBot's own `sharpe` is `(CAGR - risk_free_rate) / volatility` (`lumibot/tools/indicators.py`), not an arithmetic Sharpe. | Report the standard daily excess-return Sharpe as the primary metric and label the engine value `cagr_over_volatility`. Compute it in the evaluation layer from the equity curve; do not quote the tearsheet field as a Sharpe. |
+| P1 | **Bar labelling and regular-session cleanliness.** `_hts_lumibot_data` relabels archived 09:00-15:00 ET bars onto NYSE half-hour timestamps. Native LumiBot prevents lookahead structurally, but it cannot tell you the source bars are clean. | Verify bar start/end semantics, premarket contamination, early closes, and DST, then record the finding. An hour containing premarket trades cannot be cleaned by relabelling it. |
+| P1 | **Split adjustment and dividends.** The archive is OHLCV-only and "adjusted" is a declared label; no distribution column exists. Native LumiBot can consume a `dividend` column, but the cache provides none. | Verify split factors and adjustment basis against a manifest. Any candidate requiring total return (A02's BIL hurdle in particular) stays blocked until a verified distribution source exists. Price-only runs are labelled as such. |
+| P1 | **Data provenance manifest.** Cache files, schemas, checksums, feed identity, coverage, and the fixed-universe/survivorship caveat are still undocumented. | Produce the manifest artifact described in section 3. It is now the primary defence of any published result. |
+
+The IBIT pre-inception anomaly remains open and belongs to the manifest work.
 
 ## 3. Freeze the common experimental contract
 
@@ -159,7 +180,7 @@ Hypothesis: confirmation can avoid temporary dips, while an actual protective or
 | H039 | Replace the virtual stop with a resting broker stop-market order, initially fill minus 2× entry-known ATR14, then amended after completed bars. Trigger on subsequent intrabar low; gap below the active level fills at the worse opening price plus friction. |
 | H040 | Keep the baseline virtual trail and add a separate emergency resting stop initially 4× entry-known ATR14 below fill, ratcheted using close minus 4× ATR14. Protective fills take precedence; cancel sibling exits and prohibit double-selling. |
 
-H039/H040 require native broker-order lifecycle support, entry-bar activation tests, and a clear cancel/replace assumption. Hourly OHLC stop simulation cannot prove real stop-market execution quality. Do not activate a revised trail earlier in the bar that produced it.
+H039/H040 require resting protective orders in the native strategy, entry-bar activation tests, and a clear cancel/replace assumption. The engine prerequisite is now met: `BacktestingBroker` already models stop and stop-limit orders, so these candidates are no longer blocked on missing broker-order lifecycle support. What remains is implementing them in the native strategy and reporting fill fidelity honestly, because an hourly-OHLC stop simulation still cannot prove real stop-market execution quality. Do not activate a revised trail earlier in the bar that produced it.
 
 ### Family 5 — Quality of the ranking signal
 
@@ -358,9 +379,9 @@ Common alternative defaults: initial capital and accounting contract as above, m
 
 ## 7. Implementation sequence and deliverables
 
-### Phase 0 — Audited baseline and data manifest
+### Phase 0 — Native baseline, metric definition, and data manifest
 
-Repair/validate the blockers in section 2 through an explicitly authorized implementation task. Preserve old reports. Produce an attribution report: legacy replay, accounting-corrected replay with legacy sizing, then `HTS_CONTROL_1` with bounded allocation. This distinguishes a fix from a strategy change. Abort ranking if a blocker remains unresolved.
+Settle the four open items in section 2 through an explicitly authorized implementation task, then produce a baseline. Preserve the old replay reports as historical diagnostics but do not extend them. The baseline is a pair of native LumiBot runs over the common window: the existing `hts_v1` rules on the native engine, then `HTS_CONTROL_1` with the bounded allocation from section 3. Comparing those two shows the contribution of the sizing change without the ledger defect confounding it. Fix the metric definition first, so both runs are reported with the standard daily Sharpe alongside the engine's `cagr_over_volatility`. Abort ranking if an open data item is unresolved.
 
 ### Phase 1 — Parameter registry and shared feature preparation
 
@@ -391,14 +412,15 @@ Registry acceptance: exactly 100 unique HTS IDs and resolved-spec hashes, 10 uni
 
 Each phase adds unit and integration tests of its invariants, updates relevant engineering/public documentation for user-facing changes, and passes focused tests before any commit. No release, version change, or paper deployment is part of this plan.
 
-### Phase 3 — Vectorized screening and native qualification
+### Phase 3 — Native execution, with optional screening
 
 - Read the normalized cache once; precompute only distinct needed windows in float64 using NumPy/pandas array operations. These libraries may use SIMD internally; do not claim a particular instruction set or speedup without measuring it.
 - Keep portfolio state, fills, stop ordering, and cash accounting serial within each simulation. Parallelize independent simulations only; bound BLAS threads to avoid oversubscription. Use per-worker read-only data or shared immutable arrays.
 - Cache feature keys include all data/parameter/version dependencies. Train-fitted coefficients, thresholds, and hyperparameters are fold-scoped. Full-history causal rolling features are allowed only after prefix/truncation tests establish that later data cannot affect earlier values.
 - Compare scalar and vectorized implementations on representative fixtures and all registered parameter windows. Require matching decisions/fills/quantities, float comparisons within declared tolerances, and matching cash/NAV.
-- Validate every unique rule path in native LumiBot on a compact cached interval. Every finalist and the control must then complete a **full native LumiBot** run over the common two- and six-year windows with the same contract. Report native and screening runtimes separately. Fast screening alone cannot qualify a finalist.
-- Native/replay parity must compare chronological intents, fills, positions, cash, fees, financing, dividends, and NAV, not merely final Sharpe. Historical parity between older engines does not prove parity for the new virtual-stop model.
+- Every candidate is validated and run on the native engine; the native run is the result, not a confirmation of one. Run each unique rule path on a compact cached interval first, then run the full common two- and six-year windows with the same contract.
+- A vectorized or otherwise accelerated path is an optional internal convenience for triage only. It may never qualify a finalist. If one is used, it must first be shown to match native decisions, fills, quantities, cash, and NAV on representative fixtures and on every registered parameter window, and the matching evidence is recorded.
+- The replay is gone from this loop, so there is no replay/native parity check to run. Parity evidence concentrates on internal consistency of the native strategy: the same config must reproduce the same decisions and terminal state across repeated runs.
 
 ### Phase 4 — Retrospective walk-forward evaluation
 
@@ -458,17 +480,17 @@ If all data dependencies are met, there are **111 model configurations**: 100 HT
 | Fixed-candidate outer-fold results | 111 × 6 = 666 |
 | Core research total | **2,220** |
 | QQQ, SPY, and cash controls over two descriptive windows | 3 × 2 = 6 additional |
-| Full native descriptive reruns of up to 10 finalists + HTS control | Up to 22 additional |
+| Native reruns of up to 10 finalists + HTS control | Superseded: every run is native now, so this row is no longer an additional stage |
 | Three execution stresses for up to 10 finalists + control across six folds | Up to 198 additional |
 | Optional Optuna stage | Up to 720 inner simulations, plus separately counted outer/native qualification |
 
-These are logical workloads, not permission to launch them now. Fold benchmark returns may be sliced from identical standalone buy-and-hold histories with correct boundary accounting. Native path preflights, scalar parity, continuous selection-policy simulations, and any repeat/failure retries are extra jobs and recorded separately. Do not hide them in a claimed 100-run benchmark. A08 and A10 have known additional-data requirements; A02 and A07 may also be blocked until distributions/session integrity are verified. Show blocked candidates as blocked, not as zero-return successes.
+These are logical workloads, not permission to launch them now. Fold benchmark returns may be sliced from identical standalone buy-and-hold histories with correct boundary accounting. Native path preflights, reproducibility checks, continuous selection-policy simulations, and any repeat/failure retries are extra jobs and recorded separately. Do not hide them in a claimed 100-run benchmark. A08 and A10 have known additional-data requirements; A02 and A07 may also be blocked until distributions/session integrity are verified. Show blocked candidates as blocked, not as zero-return successes.
 
-Before estimating duration, measure one six-year control, one covariance-heavy variant, one protective-stop variant, and their native paths. Record cold/warm load, feature-prep, event-loop, report time, peak memory, worker count, numerical-library thread count, and event/fill counts. Estimate remaining wall time from measured job classes and worker efficiency. Do not extrapolate the earlier seconds-long custom replay to every full LumiBot run.
+Before estimating duration, measure one six-year control, one covariance-heavy variant, and one protective-stop variant, all on the native engine. Record cold/warm load, feature-prep, event-loop, report time, peak memory, worker count, numerical-library thread count, and event/fill counts. Estimate remaining wall time from measured job classes and worker efficiency. Do not extrapolate the earlier seconds-long custom replay to every full LumiBot run; the replay is not this engine and its timings do not transfer.
 
-Proposed run artifacts under `reports/hts_variations/<experiment_id>/`: immutable manifest, resolved candidate registry, data-quality report, trial ledger, per-candidate run metadata, fills, hourly/daily equity, terminal state, fold assignments, metrics, benchmark comparison, scalar/native parity, cost stresses, and runtime summaries. Use atomic completion markers and hashes so resume cannot mix revisions. Failed and incomplete jobs remain visible.
+Proposed run artifacts under `reports/hts_variations/<experiment_id>/`: immutable manifest, resolved candidate registry, data-quality report, trial ledger, per-candidate run metadata, fills, hourly/daily equity, terminal state, fold assignments, metrics, benchmark comparison, reproducibility checks, cost stresses, and runtime summaries. Use atomic completion markers and hashes so resume cannot mix revisions. Failed and incomplete jobs remain visible.
 
-Implementation is ready for a research run when: every ID resolves once; required data gates pass; accounting and scalar/native parity pass; sampling/selection rules are frozen; completed jobs can be resumed without duplication; and the report separates research approximations from native execution results.
+Implementation is ready for a research run when: every ID resolves once; the four open section 2 items are settled; the standard daily Sharpe is computed independently of the engine's `cagr_over_volatility` field; sampling and selection rules are frozen; completed native jobs can be resumed without duplication; and the report labels price-only runs and any remaining execution approximations explicitly.
 
 ## 9. Recommended starting sequence
 
