@@ -2,7 +2,7 @@
 
 Architecture and accuracy invariants for LumiBot data, simulation, and fills.
 
-**Last Updated:** 2026-09-12
+**Last Updated:** 2026-09-13
 **Status:** Active
 **Audience:** Developers and AI agents
 
@@ -69,6 +69,23 @@ tables. The serial broker loop still owns cash, whole-share quantities, fees,
 financing, order state, stop activation, and fills. Research accelerators must
 pass fill-level parity against that serial path before their aggregate metrics
 are used for strategy decisions.
+
+### Alpaca stock-bar reproducibility
+
+An Alpaca strategy whose signals use OHLCV or dollar-volume gates must record
+the stock feed and price-adjustment basis used for every run. `STOCK_DATA_FEED`
+(`iex`, `sip`, or another Alpaca-supported feed) and
+`STOCK_DATA_ADJUSTMENT` (`raw`, `split`, `dividend`, or `all`) can be supplied
+in the Alpaca configuration. They are passed to both single-symbol and batched
+stock-bar requests. Account-default feeds are backward compatible, but are not
+an acceptable basis for reproducibility-sensitive strategies.
+
+Native hourly stock-bar history requests must calculate their calendar window
+from the requested bar size. Treating a 200-hour request as 200 minutes yields
+only one session and silently under-warms indicators. Strategies that require
+strict 09:30–16:00 ET boundaries should still aggregate completed minute bars
+on the exchange calendar, because provider clock-hour bars can straddle the
+regular-session open.
 
 Stats may contain several lifecycle snapshots at one exact timestamp. Analysis
 uses the final snapshot and recalculates period returns from that deduplicated

@@ -37,6 +37,9 @@
 - Corrected README and package license labels to match the existing GPLv3 LICENSE file; the license text is unchanged.
 
 ### Fixed
+- Alpaca stock-bar requests can now pin their market-data feed and adjustment
+  basis through broker configuration, and native hourly requests calculate a
+  sufficient trading-day lookback instead of treating hours as minutes.
 - Cached strategy comparison runners now separate completed signal bars from
   next-open execution, use low-triggered gap-aware stops, interpret 7 bps as a
   combined round trip, use matching whole-share cash accounting, and verify

@@ -124,6 +124,30 @@ Configuration Options
 
 All configuration should be done via environment variables in your `.env` file:
 
+For strategies whose signals depend on stock volume or on a reproducible
+historical data basis, pass the market-data settings directly in the Alpaca
+configuration. They are deliberately configuration values rather than hidden
+environment variables:
+
+.. code-block:: python
+
+    from lumibot.brokers import Alpaca
+
+    broker = Alpaca({
+        "API_KEY": "<your-api-key>",
+        "API_SECRET": "<your-api-secret>",
+        "PAPER": True,
+        # Explicit feed prevents the account default from changing a volume gate.
+        "STOCK_DATA_FEED": "iex",  # or "sip" when your account is entitled
+        # Keep the historical adjustment basis explicit and reproducible.
+        "STOCK_DATA_ADJUSTMENT": "split",  # raw, split, dividend, or all
+    })
+
+``STOCK_DATA_FEED`` is passed to Alpaca's stock-bar request. ``STOCK_DATA_ADJUSTMENT``
+controls the adjustment applied to stock bars; when omitted, LumiBot preserves
+the historical ``auto_adjust`` behavior. A feed or adjustment change creates a
+different data set, so it should also be reflected in the matching backtest.
+
 .. list-table:: Alpaca Environment Variables
    :widths: 25 10 10 55
    :header-rows: 1

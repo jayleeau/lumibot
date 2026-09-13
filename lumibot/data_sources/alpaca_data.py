@@ -29,6 +29,56 @@ def _regular_market_hours_mask(index):
     return ((index.hour > 9) | ((index.hour == 9) & (index.minute >= 30))) & (index.hour < 16)
 
 
+def _stock_request_days_needed(length, timestep):
+    """Return a conservative NYSE-session lookback for a stock-bar request.
+
+    Alpaca accepts native hourly bars, but its prior lookback calculation
+    treated every non-daily request as one-minute bars. A request for 200
+    hourly bars consequently fetched roughly one session of data. Keep a
+    small session buffer for weekends and market holidays.
+    """
+    from math import ceil
+
+    from lumibot.tools.helpers import parse_canonical_timestep
+
+    parsed = parse_canonical_timestep(timestep)
+    if parsed is None:
+        # Preserve the historical minute-bar fallback for unknown source
+        # timesteps; _parse_source_timestep will subsequently raise its normal
+        # unsupported-timestep error if appropriate.
+        return (length // 390) + 2
+
+    quantity, unit = parsed
+    if unit == "day":
+        return max(length * quantity, 1)
+    if unit == "hour":
+        # A regular NYSE session has 6.5 hours. Seven is conservative for
+        # native hourly bars and avoids silently under-warming indicators.
+        return max(ceil(length / max(7 // quantity, 1)) + 2, 1)
+    if unit == "minute":
+        bars_per_day = max(390 // quantity, 1)
+        return max(ceil(length / bars_per_day) + 2, 1)
+    if unit == "second":
+        bars_per_day = max((390 * 60) // quantity, 1)
+        return max(ceil(length / bars_per_day) + 2, 1)
+    # Alpaca's stock bar endpoint does not currently expose native weekly or
+    # monthly requests through this adapter, but retain a safe fallback.
+    return max(length + 2, 1)
+
+
+def _coerce_stock_request_enum(value, enum_type, label):
+    """Normalize an optional Alpaca request enum without implicit defaults."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, enum_type):
+        return value
+    try:
+        return enum_type(str(value).lower())
+    except ValueError as exc:
+        choices = ", ".join(member.value for member in enum_type)
+        raise ValueError(f"{label} must be one of: {choices}") from exc
+
+
 def _date_n_trading_days_from_date(*args, **kwargs):
     from lumibot.tools.helpers import date_n_trading_days_from_date
 
@@ -304,6 +354,8 @@ class AlpacaData(DataSource):
             delay: Optional[int] = None,
             tzinfo: Optional[pytz.timezone] = None,
             remove_incomplete_current_bar: bool = False,
+            stock_data_feed=None,
+            stock_data_adjustment=None,
             **kwargs
     ) -> None:
         """
@@ -323,6 +375,13 @@ class AlpacaData(DataSource):
           Alpaca includes incomplete bars for the current bar (ie: it gives you a daily bar for the current day even if
           the day isn't over yet). Some Lumibot users night not expect that, so this option will remove the incomplete
           bar from the data.
+        - stock_data_feed (str or alpaca.data.enums.DataFeed, optional): Explicit
+          stock data feed, for example ``"iex"`` or ``"sip"``. When omitted,
+          Alpaca's account default is retained for backward compatibility.
+        - stock_data_adjustment (str or alpaca.data.enums.Adjustment, optional):
+          Explicit stock adjustment mode: ``"raw"``, ``"split"``,
+          ``"dividend"``, or ``"all"``. When omitted, ``auto_adjust`` retains
+          its historical mapping (``all`` when true, otherwise ``raw``).
         **kwargs: Additional keyword arguments, such as:
                 - auto_adjust (bool): if false, data is raw. If true, data is split and dividend automatically adjusted.
                 Default is True.
@@ -341,6 +400,21 @@ class AlpacaData(DataSource):
         self.max_workers = min(max_workers, 200)
         self._remove_incomplete_current_bar = remove_incomplete_current_bar
         self._auto_adjust: bool = kwargs.get('auto_adjust', True)
+        from alpaca.data.enums import Adjustment, DataFeed
+
+        config_values = config if isinstance(config, dict) else vars(config)
+        configured_feed = stock_data_feed if stock_data_feed is not None else config_values.get("STOCK_DATA_FEED")
+        configured_adjustment = (
+            stock_data_adjustment
+            if stock_data_adjustment is not None
+            else config_values.get("STOCK_DATA_ADJUSTMENT")
+        )
+        self._stock_data_feed = _coerce_stock_request_enum(
+            configured_feed, DataFeed, "stock_data_feed"
+        )
+        self._stock_data_adjustment = _coerce_stock_request_enum(
+            configured_adjustment, Adjustment, "stock_data_adjustment"
+        )
 
         # When requesting data for assets for example,
         # if there is too many assets, the best thing to do would
@@ -791,12 +865,7 @@ class AlpacaData(DataSource):
                 raise TypeError("timeshift must be a datetime.timedelta")
             end_dt -= timeshift
 
-        # Compute start date (rough heuristic using trading days for minute bars)
-        if timestep == "day":
-            days_needed = length
-        else:
-            minutes_per_day = 390
-            days_needed = (length // minutes_per_day) + 2  # + buffer
+        days_needed = _stock_request_days_needed(length, timestep)
         start_date = _date_n_trading_days_from_date(
             n_days=days_needed,
             start_datetime=end_dt,
@@ -855,7 +924,9 @@ class AlpacaData(DataSource):
                 yield lst[i : i + size]
 
         # Adjustment setting
-        adjustment = Adjustment.ALL if getattr(self, "_auto_adjust", True) else Adjustment.RAW
+        adjustment = self._stock_data_adjustment or (
+            Adjustment.ALL if getattr(self, "_auto_adjust", True) else Adjustment.RAW
+        )
 
         # Stocks batching
         if stock_assets:
@@ -868,6 +939,7 @@ class AlpacaData(DataSource):
                     start=start_dt,
                     end=end_dt,
                     adjustment=adjustment,
+                    feed=self._stock_data_feed,
                 )
                 try:
                     barset = client.get_stock_bars(params)
@@ -1078,13 +1150,10 @@ class AlpacaData(DataSource):
                 raise TypeError("timeshift must be a timedelta")
             end_dt = end_dt - timeshift
 
-        # Calculate the start_dt
-        if timestep == 'day':
-            days_needed = length
-        else:
-            # For minute bars, calculate additional days needed accounting for weekends/holidays
-            minutes_per_day = 390  # ~6.5 hours of trading per day
-            days_needed = (length // minutes_per_day) + 1
+        # Determine a conservative session lookback for the requested native
+        # bar size. In particular, hourly history must not be treated as
+        # minute history or long ATR warm-ups are silently truncated.
+        days_needed = _stock_request_days_needed(length, timestep)
 
         start_date = _date_n_trading_days_from_date(
             n_days=days_needed,
@@ -1130,12 +1199,16 @@ class AlpacaData(DataSource):
                 client = self._get_stock_client()
 
                 # noinspection PyArgumentList
+                adjustment = self._stock_data_adjustment or (
+                    Adjustment.ALL if self._auto_adjust else Adjustment.RAW
+                )
                 params = StockBarsRequest(
                     symbol_or_symbols=symbol,
                     timeframe=timeframe,
                     start=start_dt,
                     end=end_dt,
-                    adjustment=Adjustment.ALL if self._auto_adjust else Adjustment.RAW
+                    adjustment=adjustment,
+                    feed=self._stock_data_feed,
                 )
                 barset = client.get_stock_bars(params)
 
