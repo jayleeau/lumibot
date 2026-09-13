@@ -34,7 +34,8 @@ def test_execution_engine_constant_names_the_native_path() -> None:
 
 def test_control_and_parameter_only_families_are_supported() -> None:
     registry = get_registry()
-    for candidate_id in ("HTS_CONTROL_1", "H001", "H020", "H030", "H091", "H094"):
+    # H050-H054 exercise the already-honoured top_n / require_positive_return knobs.
+    for candidate_id in ("HTS_CONTROL_1", "H001", "H020", "H030", "H050", "H054", "H091", "H094"):
         candidate = registry.get(candidate_id)
         assert check_supported(dict(candidate.parameters), HTS_BASELINE) == ()
 

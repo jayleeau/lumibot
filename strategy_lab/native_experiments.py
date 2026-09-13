@@ -236,7 +236,23 @@ def prepare_inputs(params: Mapping[str, Any], window: ExperimentWindow) -> Prepa
 
 # Parameters this module honours for every value.  Anything not listed here must
 # still sit at its control value, or the candidate is reported unsupported.
-FLEXIBLE_PARAMETERS = frozenset({"trend_sma", "return_period", "atr_period", "atr_k", "universe"})
+# Every entry is read by the strategy or the feature preparation, so the gate
+# never reports a knob as supported that nothing consumes.
+FLEXIBLE_PARAMETERS = frozenset({
+    "universe",              # resolve_universe + prepare_inputs
+    "top_n",                 # _select cap and _rebalance slot sizing
+    "trend_sma",             # _daily_features
+    "return_period",         # _daily_features
+    "atr_period",            # _hourly_features
+    "atr_k",                 # stop level and ratchet
+    "liquidity_period",      # _daily_features median dollar volume window
+    "min_median_dollar_volume",  # _select eligibility
+    "require_positive_return",   # _select eligibility
+    "signal_hour",           # on_trading_iteration
+    "rebalance_hour",        # on_trading_iteration
+    "gross_target",          # _rebalance slot sizing
+    "cost_bps_per_side",     # trading fee in run_candidate
+})
 
 
 def check_supported(params: Mapping[str, Any], control_baseline: Mapping[str, Any]) -> tuple[str, ...]:
