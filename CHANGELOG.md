@@ -3,6 +3,9 @@
 ## 4.5.92 - Unreleased
 
 ### Changed
+- HTS v1 now has a local-cache replay command that runs the same shared
+  decision core as the paper wrapper and records its decisions, next-open fills,
+  equity curve, and explicit virtual-stop execution assumption.
 - Managed AI agents can select a reviewed provider reasoning effort end to end;
   unsupported provider/effort combinations fail visibly instead of being
   silently ignored. Stable Anthropic Opus/Fable family identifiers are also

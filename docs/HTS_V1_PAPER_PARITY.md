@@ -21,3 +21,7 @@ The runtime wrapper stays dry by default. It requires an explicit normalized bar
 5. Enable paper order submission only after decision parity passes and startup reconciliation reports identical local and broker positions.
 
 The decision contract does not promise equal fills: a paper broker controls fill timing and price. It does promise the same data and configuration produce the same selection, stop decision, and order intent.
+
+## Cached replay
+
+Run `scripts/backtest_hts_v1_local.py` to replay the same shared decision core against the retained local archives. Its virtual stop is intentionally post-close: a close at or below the trail creates a sell intent and the simulator fills that intent at the following hourly open. Its saved `run.json`, `fills.csv`, equity curve, and decision journal make that execution assumption reviewable beside any native LumiBot result.
