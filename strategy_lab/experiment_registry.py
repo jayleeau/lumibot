@@ -155,7 +155,8 @@ class ExperimentRegistry:
             "",
             f"Last Updated: {updated}",
             "",
-            "Status: Registered; no candidate has been backtested or qualified",
+            "Status: Implemented on the native engine; descriptive results in "
+            "`docs/HTS_NATIVE_RESULTS.md`",
             "",
             "Audience: Strategy developers and the strategy owner",
             "",
@@ -174,9 +175,13 @@ class ExperimentRegistry:
             f"variation. Totals: {stats['total']} configurations = 1 control + 100 HTS "
             "variations + 10 alternative strategies.",
             "",
-            "Planning source: `docs/HTS_100_VARIATIONS_RESEARCH_PLAN.md`. Registration is not "
-            "authorization to run: no backtest, paper session, or broker order is authorized by "
-            "this catalog.",
+            "Planning source: `docs/HTS_100_VARIATIONS_RESEARCH_PLAN.md`; implementation and "
+            "validation plan: `docs/HTS_REMAINING_IMPLEMENTATION_PLAN.md`; completed descriptive "
+            "run: `docs/HTS_NATIVE_RESULTS.md`. Every HTS variation and the six daily-data "
+            "alternatives are implemented on `native-lumibot-backtesting`; A02, A07, A08, and "
+            "A10 remain `blocked-data` because their inputs are not in the retained archives. "
+            "Registration is not authorization to paper trade: no live session or broker order "
+            "is authorized by this catalog.",
             "",
             "## How to look these up",
             "",
@@ -239,11 +244,12 @@ class ExperimentRegistry:
             lines.append("")
         deferred = [c for c in self.all_candidates() if c.priority == PRIORITY_DEFERRED]
         if deferred:
-            lines.extend(("## Implementation prerequisites", ""))
+            lines.extend(("## Previously deferred candidates", ""))
             lines.append(
-                "These candidates are registered but deferred pending implementation of resting "
-                "protective stops in the native strategy plus an honest fill-fidelity report: "
-                + ", ".join(c.candidate_id for c in deferred) + "."
+                "These candidates were deferred pending resting protective-stop support in the "
+                "native strategy. That support is implemented and their descriptive runs are "
+                "complete; see `docs/HTS_NATIVE_RESULTS.md` for the fill-fidelity caveat on "
+                "simulated stop prices: " + ", ".join(c.candidate_id for c in deferred) + "."
             )
             lines.append("")
         return "\n".join(lines).rstrip() + "\n"

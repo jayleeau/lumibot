@@ -4,7 +4,10 @@ Description: The execution plan for implementing and qualifying the 71 HTS catal
 
 Last Updated: 2026-09-14
 
-Status: Approved direction; remaining implementation not started
+Status: Implemented and validated; descriptive results in
+`docs/HTS_NATIVE_RESULTS.md`. 107 of 111 configurations run on the native engine
+(214 accepted runs); A02, A07, A08, and A10 remain `blocked-data` because their
+required inputs are not in the retained archives.
 
 Audience: Strategy developers and the strategy owner
 

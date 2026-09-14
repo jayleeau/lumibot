@@ -2,9 +2,9 @@
 
 Description: The named, resolved, fingerprinted lookup table for every registered HTS research configuration.
 
-Last Updated: 2026-09-13
+Last Updated: 2026-09-14
 
-Status: Registered; no candidate has been backtested or qualified
+Status: Implemented on the native engine; descriptive results in `docs/HTS_NATIVE_RESULTS.md`
 
 Audience: Strategy developers and the strategy owner
 
@@ -16,7 +16,7 @@ Execution engine of record: `native-lumibot-backtesting` (`PandasDataBacktesting
 
 The audited control `HTS_CONTROL_1` is listed separately and is **not** counted as a variation. Totals: 111 configurations = 1 control + 100 HTS variations + 10 alternative strategies.
 
-Planning source: `docs/HTS_100_VARIATIONS_RESEARCH_PLAN.md`. Registration is not authorization to run: no backtest, paper session, or broker order is authorized by this catalog.
+Planning source: `docs/HTS_100_VARIATIONS_RESEARCH_PLAN.md`; implementation and validation plan: `docs/HTS_REMAINING_IMPLEMENTATION_PLAN.md`; completed descriptive run: `docs/HTS_NATIVE_RESULTS.md`. Every HTS variation and the six daily-data alternatives are implemented on `native-lumibot-backtesting`; A02, A07, A08, and A10 remain `blocked-data` because their inputs are not in the retained archives. Registration is not authorization to paper trade: no live session or broker order is authorized by this catalog.
 
 ## How to look these up
 
@@ -435,6 +435,6 @@ The first thirty minutes may establish a level that later momentum continues thr
 | A08 | short-borrow-data, two-leg-execution-model | Prices alone are insufficient: borrow availability, borrow rates, and a two-leg execution model are required before this can qualify. |
 | A10 | one-minute-bars, exchange-calendar | Requires one-minute bars and an exchange calendar; it is not implementable from the retained hourly cache alone. |
 
-## Implementation prerequisites
+## Previously deferred candidates
 
-These candidates are registered but deferred pending implementation of resting protective stops in the native strategy plus an honest fill-fidelity report: H039, H040, H100.
+These candidates were deferred pending resting protective-stop support in the native strategy. That support is implemented and their descriptive runs are complete; see `docs/HTS_NATIVE_RESULTS.md` for the fill-fidelity caveat on simulated stop prices: H039, H040, H100.

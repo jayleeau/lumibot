@@ -94,3 +94,16 @@ context*.json
 
 # Local scratch / diagnostics (never commit)
 tmp/
+
+# HTS / strategy research — regenerable data & runtime artifacts (never commit)
+/short/                 # raw Databento DBNs + derived DuckDB archives
+/live/                  # launchd trader runtime logs (source lives under strategy_lab/)
+/reports/full_lumibot*/ # backtest smoke/debug output
+/reports/hts_native_2026-09-14/H*/   # per-candidate result pages (regenerate)
+/reports/hts_native_2026-09-14/detail/
+/reports/hts_variations/
+/reports/hts_pilot/
+/reports/hts_determinism/
+/reports/hts_memprobe/
+/reports/hts_v1_virtual_stop_2020_2026/
+/reports/*.duckdb
