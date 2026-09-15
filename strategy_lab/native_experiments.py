@@ -90,6 +90,13 @@ ET = "America/New_York"
 USD = Asset("USD", "forex")
 INITIAL_CASH = 100_000.0
 WARMUP_DAYS = 500
+
+
+def _add_months(value: str, months: int) -> str:
+    """Add whole calendar months to an ISO ``YYYY-MM-DD`` date string."""
+    return (pd.Timestamp(value) + pd.DateOffset(months=months)).normalize().date().isoformat()
+
+
 BENCHMARK_SYMBOLS: tuple[str, ...] = ("SPY", "QQQ")
 ENGINE_LABEL = "lumibot.strategies.Strategy.run_backtest + BacktestingBroker"
 # Bump this whenever a strategy mechanism changes.  The runner refuses to treat
@@ -122,7 +129,58 @@ class ExperimentWindow:
 WINDOW_SIX_YEAR = ExperimentWindow("six_year", "2020-09-08", "2026-09-08")
 WINDOW_TWO_YEAR = ExperimentWindow("two_year", "2024-09-08", "2026-09-08")
 WINDOWS: tuple[ExperimentWindow, ...] = (WINDOW_SIX_YEAR, WINDOW_TWO_YEAR)
-WINDOW_BY_LABEL = {window.label: window for window in WINDOWS}
+
+# Retrospective walk-forward fold schedule (plan Phase 4).  Six rolling outer
+# folds; each fold has a discovery interval, two inner-validation sub-windows
+# (months 24-30 and 30-36 of the discovery interval) used only for selection,
+# and a frozen outer test interval (the next six months) scored after selection.
+# Dates follow the plan table exactly.  Only the inner-validation and outer-test
+# windows need to be run as backtests; the discovery labels are kept for
+# provenance/feature-warmup context and are intentionally not scheduled.
+_WF_FOLDS: tuple[
+    tuple[str, str, str, str, str, str, str], ...
+] = (
+    # (fold, disc_start, disc_end, innerA_start, innerA_end, innerB_start, innerB_end)
+    # innerA = months 24-30, innerB = months 30-36 of the discovery interval;
+    # outer test = disc_end .. disc_end+6m.
+    (
+        "f1", "2020-09-09", "2023-09-09",
+        "2022-09-09", "2023-03-09", "2023-03-09", "2023-09-09",
+    ),
+    (
+        "f2", "2021-03-09", "2024-03-09",
+        "2023-03-09", "2023-09-09", "2023-09-09", "2024-03-09",
+    ),
+    (
+        "f3", "2021-09-09", "2024-09-09",
+        "2023-09-09", "2024-03-09", "2024-03-09", "2024-09-09",
+    ),
+    (
+        "f4", "2022-03-09", "2025-03-09",
+        "2024-03-09", "2024-09-09", "2024-09-09", "2025-03-09",
+    ),
+    (
+        "f5", "2022-09-09", "2025-09-09",
+        "2024-09-09", "2025-03-09", "2025-03-09", "2025-09-09",
+    ),
+    (
+        "f6", "2023-03-09", "2026-03-09",
+        "2025-03-09", "2025-09-09", "2025-09-09", "2026-03-09",
+    ),
+)
+
+WALK_FORWARD_WINDOWS: tuple[ExperimentWindow, ...] = tuple(
+    ExperimentWindow(f"{fold}_{kind}", start, end)
+    for fold, _disc_start, disc_end, a_s, a_e, b_s, b_e in _WF_FOLDS
+    for start, end, kind in (
+        (a_s, a_e, "innerA"),
+        (b_s, b_e, "innerB"),
+        (disc_end, _add_months(disc_end, 6), "test"),
+    )
+)
+WINDOW_BY_LABEL: dict[str, ExperimentWindow] = {
+    window.label: window for window in WINDOWS + WALK_FORWARD_WINDOWS
+}
 
 
 class UnsupportedCandidateError(RuntimeError):

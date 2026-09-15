@@ -1,0 +1,59 @@
+{
+  "archive": "short/hts_xnas_itch_15m_split_adjusted.duckdb",
+  "dst_utc_offset_of_0930_et_by_month": {
+    "1": [
+      "+1100"
+    ],
+    "2": [
+      "+1100"
+    ],
+    "3": [
+      "+1100"
+    ],
+    "4": [
+      "+1000",
+      "+1100"
+    ],
+    "5": [
+      "+1000"
+    ],
+    "6": [
+      "+1000"
+    ],
+    "7": [
+      "+1000"
+    ],
+    "8": [
+      "+1000"
+    ],
+    "9": [
+      "+1000"
+    ],
+    "10": [
+      "+1000",
+      "+1100"
+    ],
+    "11": [
+      "+1100"
+    ],
+    "12": [
+      "+1100"
+    ]
+  },
+  "early_close_sessions": [],
+  "finding": "The 15-minute archive is NOT regular-session-only: it carries premarket (04:00-09:30 ET) and post-market (16:00-20:00 ET) bars. Relabelling cannot remove this; any regular-session candidate must explicitly filter to 09:30-16:00 ET, and A10 (opening-range) must use genuine 09:30-10:00 ET one-minute bars, not a relabelled proxy.",
+  "non_session_dates_present": 0,
+  "non_session_examples": [],
+  "regular_session_only": false,
+  "session_classification": {
+    "outside_0400_2000_et": 0,
+    "postmarket_1600_2000_et": 586184,
+    "postmarket_pct": 0.1258,
+    "premarket_0400_0930_et": 1092170,
+    "premarket_pct": 0.2343,
+    "rth_0930_1600_et": 2982084,
+    "rth_pct": 0.6399
+  },
+  "sessions": 2103,
+  "total_bars": 4660438
+}

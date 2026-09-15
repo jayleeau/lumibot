@@ -1,0 +1,166 @@
+{
+  "fees": [
+    7.0,
+    15.0
+  ],
+  "results": [
+    {
+      "base_window": "f1_test",
+      "cagr": 0.005116207529259675,
+      "candidate_id": "A06",
+      "fee_bps_per_side": 7.0,
+      "fold": "f1",
+      "max_drawdown": 0.03569472781565275,
+      "problems": [],
+      "sharpe": 0.1067068735038735,
+      "total_return": 0.00250406463000008,
+      "window": "f1_test"
+    },
+    {
+      "base_window": "f2_test",
+      "cagr": -0.26573533213046807,
+      "candidate_id": "H010",
+      "fee_bps_per_side": 7.0,
+      "fold": "f2",
+      "max_drawdown": 0.3343708195113554,
+      "problems": [],
+      "sharpe": -0.6041272180384101,
+      "total_return": -0.14265451989950007,
+      "window": "f2_test"
+    },
+    {
+      "base_window": "f3_test",
+      "cagr": 0.5801934615980753,
+      "candidate_id": "H018",
+      "fee_bps_per_side": 7.0,
+      "fold": "f3",
+      "max_drawdown": 0.3298697949955871,
+      "problems": [],
+      "sharpe": 1.1688393598014502,
+      "total_return": 0.2513620750499992,
+      "window": "f3_test"
+    },
+    {
+      "base_window": "f4_test",
+      "cagr": -0.28253821289082126,
+      "candidate_id": "H018",
+      "fee_bps_per_side": 7.0,
+      "fold": "f4",
+      "max_drawdown": 0.31709891527638034,
+      "problems": [],
+      "sharpe": -0.8466832218630567,
+      "total_return": -0.15325754218499965,
+      "window": "f4_test"
+    },
+    {
+      "base_window": "f5_test",
+      "cagr": -0.045271653677372625,
+      "candidate_id": "H090",
+      "fee_bps_per_side": 7.0,
+      "fold": "f5",
+      "max_drawdown": 0.1728858672719218,
+      "problems": [],
+      "sharpe": 0.05554422964849195,
+      "total_return": -0.022696569040000725,
+      "window": "f5_test"
+    },
+    {
+      "base_window": "f6_test",
+      "cagr": 0.11612077543897392,
+      "candidate_id": "A01",
+      "fee_bps_per_side": 7.0,
+      "fold": "f6",
+      "max_drawdown": 0.031765912124966156,
+      "problems": [],
+      "sharpe": 1.4786031034098326,
+      "total_return": 0.05658534065000009,
+      "window": "f6_test"
+    },
+    {
+      "base_window": "f1_test",
+      "cagr": -0.04667539320652381,
+      "candidate_id": "A06",
+      "fee_bps_per_side": 15.0,
+      "fold": "f1",
+      "max_drawdown": 0.047655679673977214,
+      "problems": [],
+      "sharpe": -0.6300689737296852,
+      "total_return": -0.02315326225000036,
+      "window": "f1_test"
+    },
+    {
+      "base_window": "f2_test",
+      "cagr": -0.3755099656915085,
+      "candidate_id": "H010",
+      "fee_bps_per_side": 15.0,
+      "fold": "f2",
+      "max_drawdown": 0.38022695198498835,
+      "problems": [],
+      "sharpe": -0.927842609745776,
+      "total_return": -0.20911626516000126,
+      "window": "f2_test"
+    },
+    {
+      "base_window": "f3_test",
+      "cagr": 0.3404711205125923,
+      "candidate_id": "H018",
+      "fee_bps_per_side": 15.0,
+      "fold": "f3",
+      "max_drawdown": 0.3507091857377109,
+      "problems": [],
+      "sharpe": 0.8307023469877373,
+      "total_return": 0.15442503842500077,
+      "window": "f3_test"
+    },
+    {
+      "base_window": "f4_test",
+      "cagr": -0.3945056695833806,
+      "candidate_id": "H018",
+      "fee_bps_per_side": 15.0,
+      "fold": "f4",
+      "max_drawdown": 0.35952729337640743,
+      "problems": [],
+      "sharpe": -1.2984307776771509,
+      "total_return": -0.22226555429999983,
+      "window": "f4_test"
+    },
+    {
+      "base_window": "f5_test",
+      "cagr": -0.2171541182474207,
+      "candidate_id": "H090",
+      "fee_bps_per_side": 15.0,
+      "fold": "f5",
+      "max_drawdown": 0.19671289795403468,
+      "problems": [],
+      "sharpe": -0.46530338995398224,
+      "total_return": -0.11424998022499988,
+      "window": "f5_test"
+    },
+    {
+      "base_window": "f6_test",
+      "cagr": 0.11471979199137206,
+      "candidate_id": "A01",
+      "fee_bps_per_side": 15.0,
+      "fold": "f6",
+      "max_drawdown": 0.03183503776056795,
+      "problems": [],
+      "sharpe": 1.4613814579720963,
+      "total_return": 0.05592064425000021,
+      "window": "f6_test"
+    }
+  ],
+  "summary": {
+    "15bps": {
+      "mean_test_sharpe": -0.1715936576911268,
+      "median_test_sharpe": -0.5476861818418337,
+      "n": 6,
+      "worst_test_sharpe": -1.2984307776771509
+    },
+    "7bps": {
+      "mean_test_sharpe": 0.22648052107703023,
+      "median_test_sharpe": 0.08112555157618273,
+      "n": 6,
+      "worst_test_sharpe": -0.8466832218630567
+    }
+  }
+}

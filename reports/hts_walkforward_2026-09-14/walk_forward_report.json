@@ -1,0 +1,1504 @@
+{
+  "folds": {
+    "f1": {
+      "all_outer_top": [
+        {
+          "cagr": 5.538378535131761,
+          "candidate_id": "H019",
+          "family_id": "family-2-rank-horizon",
+          "fills": 240,
+          "max_drawdown": 0.20488585941684667,
+          "sharpe": 3.313278404303684,
+          "total_return": 1.509815094803749
+        },
+        {
+          "cagr": 4.382713636156658,
+          "candidate_id": "H031",
+          "family_id": "family-4-exit",
+          "fills": 188,
+          "max_drawdown": 0.13414478154462461,
+          "sharpe": 3.0073443776199684,
+          "total_return": 1.2816323341875004
+        },
+        {
+          "cagr": 3.8693270009330565,
+          "candidate_id": "H027",
+          "family_id": "family-3-atr",
+          "fills": 284,
+          "max_drawdown": 0.17055131224228037,
+          "sharpe": 3.0035625540537167,
+          "total_return": 1.1722586790930012
+        },
+        {
+          "cagr": 3.5549455236002974,
+          "candidate_id": "H011",
+          "family_id": "family-2-rank-horizon",
+          "fills": 291,
+          "max_drawdown": 0.13443263128573113,
+          "sharpe": 2.992736401191258,
+          "total_return": 1.1023563914950012
+        },
+        {
+          "cagr": 1.3222072109978922,
+          "candidate_id": "H100",
+          "family_id": "family-10-universe-and-combinations",
+          "fills": 136,
+          "max_drawdown": 0.07843638605227188,
+          "sharpe": 2.9198006149171647,
+          "total_return": 0.5111898361410359
+        },
+        {
+          "cagr": 3.9009593291412505,
+          "candidate_id": "H084",
+          "family_id": "family-9-turnover",
+          "fills": 176,
+          "max_drawdown": 0.1967795774749178,
+          "sharpe": 2.8710964001049217,
+          "total_return": 1.179162968605
+        },
+        {
+          "cagr": 3.895032441257684,
+          "candidate_id": "H087",
+          "family_id": "family-9-turnover",
+          "fills": 228,
+          "max_drawdown": 0.16320679723179377,
+          "sharpe": 2.8391113361161375,
+          "total_return": 1.1778710590845005
+        },
+        {
+          "cagr": 3.8049908083134483,
+          "candidate_id": "H018",
+          "family_id": "family-2-rank-horizon",
+          "fills": 246,
+          "max_drawdown": 0.20887107060025056,
+          "sharpe": 2.834838869902578,
+          "total_return": 1.158145297313749
+        },
+        {
+          "cagr": 3.1885568914702658,
+          "candidate_id": "H045",
+          "family_id": "family-5-rank-quality",
+          "fills": 261,
+          "max_drawdown": 0.24288275122467573,
+          "sharpe": 2.806098252815778,
+          "total_return": 1.0177083949100005
+        },
+        {
+          "cagr": 4.444624525692451,
+          "candidate_id": "H025",
+          "family_id": "family-3-atr",
+          "fills": 168,
+          "max_drawdown": 0.18284546232171017,
+          "sharpe": 2.8005531667248467,
+          "total_return": 1.294455820958
+        }
+      ],
+      "inner_leaderboard": [
+        {
+          "candidate_id": "A06",
+          "family_id": "A06",
+          "inner_fills": 232,
+          "inner_sharpes": [
+            1.9612000837777483,
+            2.770519306990029
+          ],
+          "iqr": 0.8093192232122808,
+          "median": 2.3658596953838886,
+          "score": 1.9612000837777481,
+          "turnover": 1.8412698412698412
+        },
+        {
+          "candidate_id": "H082",
+          "family_id": "family-9-turnover",
+          "inner_fills": 413,
+          "inner_sharpes": [
+            0.8948848700034205,
+            0.6931372396983584
+          ],
+          "iqr": 0.20174763030506215,
+          "median": 0.7940110548508894,
+          "score": 0.6931372396983584,
+          "turnover": 3.251968503937008
+        },
+        {
+          "candidate_id": "H029",
+          "family_id": "family-3-atr",
+          "inner_fills": 479,
+          "inner_sharpes": [
+            0.6720699005991355,
+            0.6040834132464817
+          ],
+          "iqr": 0.06798648735265378,
+          "median": 0.6380766569228087,
+          "score": 0.6040834132464818,
+          "turnover": 3.7716535433070866
+        },
+        {
+          "candidate_id": "H033",
+          "family_id": "family-4-exit",
+          "inner_fills": 520,
+          "inner_sharpes": [
+            0.543829370415982,
+            1.8268687320464418
+          ],
+          "iqr": 1.2830393616304598,
+          "median": 1.185349051231212,
+          "score": 0.543829370415982,
+          "turnover": 4.094488188976378
+        },
+        {
+          "candidate_id": "H013",
+          "family_id": "family-2-rank-horizon",
+          "inner_fills": 589,
+          "inner_sharpes": [
+            0.5335604796423545,
+            1.7900565076770663
+          ],
+          "iqr": 1.2564960280347117,
+          "median": 1.1618084936597104,
+          "score": 0.5335604796423545,
+          "turnover": 4.637795275590551
+        },
+        {
+          "candidate_id": "H036",
+          "family_id": "family-4-exit",
+          "inner_fills": 348,
+          "inner_sharpes": [
+            0.49862618609915116,
+            1.5079308846835076
+          ],
+          "iqr": 1.0093046985843563,
+          "median": 1.0032785353913294,
+          "score": 0.4986261860991512,
+          "turnover": 2.7401574803149606
+        },
+        {
+          "candidate_id": "H030",
+          "family_id": "family-3-atr",
+          "inner_fills": 407,
+          "inner_sharpes": [
+            0.4900474557746419,
+            1.2306507248936298
+          ],
+          "iqr": 0.7406032691189879,
+          "median": 0.8603490903341359,
+          "score": 0.4900474557746419,
+          "turnover": 3.204724409448819
+        },
+        {
+          "candidate_id": "H056",
+          "family_id": "family-6-concentration",
+          "inner_fills": 1093,
+          "inner_sharpes": [
+            0.3739521218368119,
+            1.0593212098953426
+          ],
+          "iqr": 0.6853690880585307,
+          "median": 0.7166366658660772,
+          "score": 0.37395212183681187,
+          "turnover": 8.606299212598426
+        },
+        {
+          "candidate_id": "H024",
+          "family_id": "family-3-atr",
+          "inner_fills": 490,
+          "inner_sharpes": [
+            0.318484452433098,
+            0.8298747927648731
+          ],
+          "iqr": 0.5113903403317751,
+          "median": 0.5741796225989855,
+          "score": 0.3184844524330979,
+          "turnover": 3.858267716535433
+        },
+        {
+          "candidate_id": "H089",
+          "family_id": "family-9-turnover",
+          "inner_fills": 636,
+          "inner_sharpes": [
+            0.30428884974157616,
+            0.3598336080616747
+          ],
+          "iqr": 0.05554475832009853,
+          "median": 0.3320612289016254,
+          "score": 0.30428884974157616,
+          "turnover": 5.0078740157480315
+        }
+      ],
+      "outer": {
+        "cagr": 0.02887831478578473,
+        "candidate_id": "A06",
+        "fees": 0.0,
+        "fills": 98,
+        "max_drawdown": 0.03133303699984913,
+        "problems": [],
+        "runtime_seconds": 0.5410599169990746,
+        "sharpe": 0.43383346266830275,
+        "total_return": 0.01404983262499937,
+        "volatility": 0.07114272073703815
+      },
+      "selected": "A06"
+    },
+    "f2": {
+      "all_outer_top": [
+        {
+          "cagr": 0.11956552292030609,
+          "candidate_id": "A05",
+          "family_id": "A05",
+          "fills": 56,
+          "max_drawdown": 0.011381364622715995,
+          "sharpe": 2.2022797551268747,
+          "total_return": 0.057890766495000356
+        },
+        {
+          "cagr": 0.19447805643121407,
+          "candidate_id": "H093",
+          "family_id": "family-10-universe-and-combinations",
+          "fills": 226,
+          "max_drawdown": 0.02878388546889532,
+          "sharpe": 2.0290741008107602,
+          "total_return": 0.09258950352875006
+        },
+        {
+          "cagr": 0.91783646775885,
+          "candidate_id": "H018",
+          "family_id": "family-2-rank-horizon",
+          "fills": 297,
+          "max_drawdown": 0.17384217329924534,
+          "sharpe": 1.406933025130268,
+          "total_return": 0.3833174369282486
+        },
+        {
+          "cagr": 0.07839610310908451,
+          "candidate_id": "A09",
+          "family_id": "A09",
+          "fills": 11,
+          "max_drawdown": 0.03219922208163539,
+          "sharpe": 1.0162137908159952,
+          "total_return": 0.03832441504999995
+        },
+        {
+          "cagr": 0.41782493293036316,
+          "candidate_id": "H017",
+          "family_id": "family-2-rank-horizon",
+          "fills": 310,
+          "max_drawdown": 0.18315540976982958,
+          "sharpe": 0.8157011523027474,
+          "total_return": 0.19001340783449816
+        },
+        {
+          "cagr": 0.05423189686132246,
+          "candidate_id": "A03",
+          "family_id": "A03",
+          "fills": 10,
+          "max_drawdown": 0.04469456074,
+          "sharpe": 0.7478789598079989,
+          "total_return": 0.026665170070000244
+        },
+        {
+          "cagr": 0.05242871083943834,
+          "candidate_id": "A01",
+          "family_id": "A01",
+          "fills": 16,
+          "max_drawdown": 0.04968656721763154,
+          "sharpe": 0.6273590788405251,
+          "total_return": 0.025789781574999893
+        },
+        {
+          "cagr": 0.2841375691508514,
+          "candidate_id": "H019",
+          "family_id": "family-2-rank-horizon",
+          "fills": 308,
+          "max_drawdown": 0.1922170698115041,
+          "sharpe": 0.5979631855674854,
+          "total_return": 0.13271310365049915
+        },
+        {
+          "cagr": 0.05957168098082821,
+          "candidate_id": "A06",
+          "family_id": "A06",
+          "fills": 116,
+          "max_drawdown": 0.06637053789508196,
+          "sharpe": 0.5609416672370073,
+          "total_return": 0.029253065760000085
+        },
+        {
+          "cagr": 0.03540375932684481,
+          "candidate_id": "A04",
+          "family_id": "A04",
+          "fills": 26,
+          "max_drawdown": 0.04780384888755318,
+          "sharpe": 0.4769419938827012,
+          "total_return": 0.01748733848000028
+        }
+      ],
+      "inner_leaderboard": [
+        {
+          "candidate_id": "H010",
+          "family_id": "family-1-trend-speed",
+          "inner_fills": 522,
+          "inner_sharpes": [
+            2.5769949882672023,
+            2.6208867787387318
+          ],
+          "iqr": 0.04389179047152947,
+          "median": 2.598940883502967,
+          "score": 2.5769949882672023,
+          "turnover": 4.110236220472441
+        },
+        {
+          "candidate_id": "H018",
+          "family_id": "family-2-rank-horizon",
+          "inner_fills": 540,
+          "inner_sharpes": [
+            2.295882490672814,
+            2.834838869902578
+          ],
+          "iqr": 0.5389563792297638,
+          "median": 2.565360680287696,
+          "score": 2.295882490672814,
+          "turnover": 4.251968503937008
+        },
+        {
+          "candidate_id": "H067",
+          "family_id": "family-7-vol-target",
+          "inner_fills": 542,
+          "inner_sharpes": [
+            2.259581772719624,
+            2.265239968992275
+          ],
+          "iqr": 0.005658196272650962,
+          "median": 2.2624108708559496,
+          "score": 2.259581772719624,
+          "turnover": 4.267716535433071
+        },
+        {
+          "candidate_id": "H068",
+          "family_id": "family-7-vol-target",
+          "inner_fills": 542,
+          "inner_sharpes": [
+            2.166609155896476,
+            2.256745383513733
+          ],
+          "iqr": 0.09013622761725726,
+          "median": 2.2116772697051044,
+          "score": 2.1666091558964755,
+          "turnover": 4.267716535433071
+        },
+        {
+          "candidate_id": "H055",
+          "family_id": "family-6-concentration",
+          "inner_fills": 538,
+          "inner_sharpes": [
+            2.1577128936430263,
+            2.5080841858225065
+          ],
+          "iqr": 0.35037129217948015,
+          "median": 2.332898539732766,
+          "score": 2.1577128936430263,
+          "turnover": 4.2362204724409445
+        },
+        {
+          "candidate_id": "H032",
+          "family_id": "family-4-exit",
+          "inner_fills": 518,
+          "inner_sharpes": [
+            2.128264073929304,
+            2.670729949662041
+          ],
+          "iqr": 0.542465875732737,
+          "median": 2.3994970117956727,
+          "score": 2.128264073929304,
+          "turnover": 4.078740157480315
+        },
+        {
+          "candidate_id": "H022",
+          "family_id": "family-3-atr",
+          "inner_fills": 610,
+          "inner_sharpes": [
+            2.22213068874874,
+            2.1232181699487054
+          ],
+          "iqr": 0.09891251880003482,
+          "median": 2.1726744293487226,
+          "score": 2.1232181699487054,
+          "turnover": 4.803149606299213
+        },
+        {
+          "candidate_id": "H069",
+          "family_id": "family-7-vol-target",
+          "inner_fills": 542,
+          "inner_sharpes": [
+            2.0993453803443756,
+            2.306741143162
+          ],
+          "iqr": 0.20739576281762462,
+          "median": 2.203043261753188,
+          "score": 2.099345380344376,
+          "turnover": 4.267716535433071
+        },
+        {
+          "candidate_id": "H061",
+          "family_id": "family-7-vol-target",
+          "inner_fills": 544,
+          "inner_sharpes": [
+            2.0936278357742424,
+            2.360118659173562
+          ],
+          "iqr": 0.2664908233993195,
+          "median": 2.226873247473902,
+          "score": 2.0936278357742424,
+          "turnover": 4.283464566929134
+        },
+        {
+          "candidate_id": "H063",
+          "family_id": "family-7-vol-target",
+          "inner_fills": 540,
+          "inner_sharpes": [
+            2.058259221852835,
+            2.341154294930037
+          ],
+          "iqr": 0.28289507307720196,
+          "median": 2.199706758391436,
+          "score": 2.058259221852835,
+          "turnover": 4.251968503937008
+        }
+      ],
+      "outer": {
+        "cagr": -0.20003716354023593,
+        "candidate_id": "H010",
+        "fees": 0.0,
+        "fills": 278,
+        "max_drawdown": 0.30812490994133357,
+        "problems": [],
+        "runtime_seconds": 1.5199359580001328,
+        "sharpe": -0.42164254843844434,
+        "total_return": -0.10525193354225082,
+        "volatility": 0.45827759691488634
+      },
+      "selected": "H010"
+    },
+    "f3": {
+      "all_outer_top": [
+        {
+          "cagr": 3.2998807830961,
+          "candidate_id": "H031",
+          "family_id": "family-4-exit",
+          "fills": 224,
+          "max_drawdown": 0.2907514203561592,
+          "sharpe": 2.5402019068204904,
+          "total_return": 1.0438138445475
+        },
+        {
+          "cagr": 2.8459800025907955,
+          "candidate_id": "H016",
+          "family_id": "family-2-rank-horizon",
+          "fills": 264,
+          "max_drawdown": 0.2918082807918505,
+          "sharpe": 2.481435825412018,
+          "total_return": 0.9350735929925011
+        },
+        {
+          "cagr": 2.011638737853941,
+          "candidate_id": "H077",
+          "family_id": "family-8-market-gate",
+          "fills": 210,
+          "max_drawdown": 0.16350880877041019,
+          "sharpe": 2.2538100683076143,
+          "total_return": 0.7165223324950001
+        },
+        {
+          "cagr": 2.2937232914730363,
+          "candidate_id": "H049",
+          "family_id": "family-5-rank-quality",
+          "fills": 272,
+          "max_drawdown": 0.2715556841164011,
+          "sharpe": 2.2405713487236127,
+          "total_return": 0.7935176770537498
+        },
+        {
+          "cagr": 1.83402280020643,
+          "candidate_id": "H078",
+          "family_id": "family-8-market-gate",
+          "fills": 186,
+          "max_drawdown": 0.18097174688277773,
+          "sharpe": 2.2297682717545393,
+          "total_return": 0.6661407961825008
+        },
+        {
+          "cagr": 2.340379160621238,
+          "candidate_id": "H010",
+          "family_id": "family-1-trend-speed",
+          "fills": 258,
+          "max_drawdown": 0.3238187744414115,
+          "sharpe": 2.164282455482623,
+          "total_return": 0.8059235532824991
+        },
+        {
+          "cagr": 2.001755317542899,
+          "candidate_id": "H084",
+          "family_id": "family-9-turnover",
+          "fills": 184,
+          "max_drawdown": 0.2040823775982471,
+          "sharpe": 2.1086981066952544,
+          "total_return": 0.7137593350274996
+        },
+        {
+          "cagr": 2.1170826985690687,
+          "candidate_id": "H008",
+          "family_id": "family-1-trend-speed",
+          "fills": 258,
+          "max_drawdown": 0.3178695419244947,
+          "sharpe": 1.9649089598673641,
+          "total_return": 0.745717050885
+        },
+        {
+          "cagr": 1.6399203540307004,
+          "candidate_id": "H082",
+          "family_id": "family-9-turnover",
+          "fills": 192,
+          "max_drawdown": 0.3025067659623465,
+          "sharpe": 1.9601308351594309,
+          "total_return": 0.6092045280699996
+        },
+        {
+          "cagr": 1.7955951853878354,
+          "candidate_id": "H047",
+          "family_id": "family-5-rank-quality",
+          "fills": 272,
+          "max_drawdown": 0.2869012446038528,
+          "sharpe": 1.9590230543977427,
+          "total_return": 0.6550305491050024
+        }
+      ],
+      "inner_leaderboard": [
+        {
+          "candidate_id": "H018",
+          "family_id": "family-2-rank-horizon",
+          "inner_fills": 543,
+          "inner_sharpes": [
+            2.834838869902578,
+            1.406933025130268
+          ],
+          "iqr": 1.4279058447723099,
+          "median": 2.120885947516423,
+          "score": 1.406933025130268,
+          "turnover": 4.309523809523809
+        },
+        {
+          "candidate_id": "A05",
+          "family_id": "A05",
+          "inner_fills": 90,
+          "inner_sharpes": [
+            1.0488622383334165,
+            2.2022797551268747
+          ],
+          "iqr": 1.1534175167934582,
+          "median": 1.6255709967301457,
+          "score": 1.0488622383334167,
+          "turnover": 0.7142857142857143
+        },
+        {
+          "candidate_id": "H017",
+          "family_id": "family-2-rank-horizon",
+          "inner_fills": 553,
+          "inner_sharpes": [
+            2.092517622171989,
+            0.8157011523027474
+          ],
+          "iqr": 1.2768164698692415,
+          "median": 1.4541093872373683,
+          "score": 0.8157011523027475,
+          "turnover": 4.388888888888889
+        },
+        {
+          "candidate_id": "A03",
+          "family_id": "A03",
+          "inner_fills": 19,
+          "inner_sharpes": [
+            0.6923258497882315,
+            0.7478789598079989
+          ],
+          "iqr": 0.05555311001976737,
+          "median": 0.7201024047981153,
+          "score": 0.6923258497882316,
+          "turnover": 0.15079365079365079
+        },
+        {
+          "candidate_id": "H093",
+          "family_id": "family-10-universe-and-combinations",
+          "inner_fills": 428,
+          "inner_sharpes": [
+            0.6835296958796081,
+            2.0290741008107602
+          ],
+          "iqr": 1.345544404931152,
+          "median": 1.3563018983451842,
+          "score": 0.6835296958796082,
+          "turnover": 3.3968253968253967
+        },
+        {
+          "candidate_id": "A01",
+          "family_id": "A01",
+          "inner_fills": 29,
+          "inner_sharpes": [
+            1.489028687614141,
+            0.6273590788405251
+          ],
+          "iqr": 0.8616696087736159,
+          "median": 1.058193883227333,
+          "score": 0.627359078840525,
+          "turnover": 0.23015873015873015
+        },
+        {
+          "candidate_id": "H019",
+          "family_id": "family-2-rank-horizon",
+          "inner_fills": 548,
+          "inner_sharpes": [
+            3.313278404303684,
+            0.5979631855674854
+          ],
+          "iqr": 2.7153152187361984,
+          "median": 1.9556207949355846,
+          "score": 0.5979631855674854,
+          "turnover": 4.349206349206349
+        },
+        {
+          "candidate_id": "A04",
+          "family_id": "A04",
+          "inner_fills": 53,
+          "inner_sharpes": [
+            2.3697915115492427,
+            0.4769419938827012
+          ],
+          "iqr": 1.8928495176665416,
+          "median": 1.423366752715972,
+          "score": 0.4769419938827011,
+          "turnover": 0.42063492063492064
+        },
+        {
+          "candidate_id": "H045",
+          "family_id": "family-5-rank-quality",
+          "inner_fills": 545,
+          "inner_sharpes": [
+            2.806098252815778,
+            0.4397467667665576
+          ],
+          "iqr": 2.3663514860492203,
+          "median": 1.622922509791168,
+          "score": 0.4397467667665578,
+          "turnover": 4.325396825396825
+        },
+        {
+          "candidate_id": "A06",
+          "family_id": "A06",
+          "inner_fills": 214,
+          "inner_sharpes": [
+            0.43383346266830275,
+            0.5609416672370073
+          ],
+          "iqr": 0.12710820456870459,
+          "median": 0.497387564952655,
+          "score": 0.4338334626683027,
+          "turnover": 1.6984126984126984
+        }
+      ],
+      "outer": {
+        "cagr": 0.7713111452504151,
+        "candidate_id": "H018",
+        "fees": 0.0,
+        "fills": 269,
+        "max_drawdown": 0.3040742349732616,
+        "problems": [],
+        "runtime_seconds": 1.7931160000007367,
+        "sharpe": 1.4119344246363033,
+        "total_return": 0.3233757536649986,
+        "volatility": 0.48102580498761105
+      },
+      "selected": "H018"
+    },
+    "f4": {
+      "all_outer_top": [
+        {
+          "cagr": 0.1254249871862172,
+          "candidate_id": "A04",
+          "family_id": "A04",
+          "fills": 24,
+          "max_drawdown": 0.03505847369986992,
+          "sharpe": 1.5453269367112337,
+          "total_return": 0.060989199755000056
+        },
+        {
+          "cagr": 0.09822908835889055,
+          "candidate_id": "A01",
+          "family_id": "A01",
+          "fills": 16,
+          "max_drawdown": 0.04518024984500002,
+          "sharpe": 1.5252258430643308,
+          "total_return": 0.04806507828999984
+        },
+        {
+          "cagr": 0.015642987910692963,
+          "candidate_id": "A05",
+          "family_id": "A05",
+          "fills": 19,
+          "max_drawdown": 0.006915897835742979,
+          "sharpe": 1.1016234433886225,
+          "total_return": 0.007807203529999862
+        },
+        {
+          "cagr": 0.05502318191448419,
+          "candidate_id": "A03",
+          "family_id": "A03",
+          "fills": 9,
+          "max_drawdown": 0.043630903149999956,
+          "sharpe": 0.9009968185821481,
+          "total_return": 0.027199700699999996
+        },
+        {
+          "cagr": 0.24894864521357585,
+          "candidate_id": "H090",
+          "family_id": "family-9-turnover",
+          "fills": 318,
+          "max_drawdown": 0.1316640252868314,
+          "sharpe": 0.8926997521117495,
+          "total_return": 0.11781880735624961
+        },
+        {
+          "cagr": 0.043020423618032044,
+          "candidate_id": "A09",
+          "family_id": "A09",
+          "fills": 10,
+          "max_drawdown": 0.052125471454999905,
+          "sharpe": 0.6427499074178352,
+          "total_return": 0.021327880080000083
+        },
+        {
+          "cagr": 0.09947078595657732,
+          "candidate_id": "H091",
+          "family_id": "family-10-universe-and-combinations",
+          "fills": 262,
+          "max_drawdown": 0.08399601816525515,
+          "sharpe": 0.6221065308936692,
+          "total_return": 0.04865861769999902
+        },
+        {
+          "cagr": 0.041785982085726925,
+          "candidate_id": "A06",
+          "family_id": "A06",
+          "fills": 88,
+          "max_drawdown": 0.11096540318078296,
+          "sharpe": 0.3002275777806288,
+          "total_return": 0.020722076189999994
+        },
+        {
+          "cagr": 0.027127021182462796,
+          "candidate_id": "H007",
+          "family_id": "family-1-trend-speed",
+          "fills": 301,
+          "max_drawdown": 0.1790285531503829,
+          "sharpe": 0.19698088267168978,
+          "total_return": 0.01350060375624973
+        },
+        {
+          "cagr": -0.07753085514426317,
+          "candidate_id": "H020",
+          "family_id": "family-2-rank-horizon",
+          "fills": 281,
+          "max_drawdown": 0.3196300829566464,
+          "sharpe": 0.0969928891380489,
+          "total_return": -0.0396270026399993
+        }
+      ],
+      "inner_leaderboard": [
+        {
+          "candidate_id": "H018",
+          "family_id": "family-2-rank-horizon",
+          "inner_fills": 566,
+          "inner_sharpes": [
+            1.406933025130268,
+            1.4119344246363033
+          ],
+          "iqr": 0.005001399506035176,
+          "median": 1.4094337248832858,
+          "score": 1.406933025130268,
+          "turnover": 4.492063492063492
+        },
+        {
+          "candidate_id": "H017",
+          "family_id": "family-2-rank-horizon",
+          "inner_fills": 572,
+          "inner_sharpes": [
+            0.8157011523027474,
+            1.5247164960848678
+          ],
+          "iqr": 0.7090153437821204,
+          "median": 1.1702088241938076,
+          "score": 0.8157011523027473,
+          "turnover": 4.5396825396825395
+        },
+        {
+          "candidate_id": "H019",
+          "family_id": "family-2-rank-horizon",
+          "inner_fills": 580,
+          "inner_sharpes": [
+            0.5979631855674854,
+            1.274561599114854
+          ],
+          "iqr": 0.6765984135473686,
+          "median": 0.9362623923411697,
+          "score": 0.5979631855674854,
+          "turnover": 4.603174603174603
+        },
+        {
+          "candidate_id": "H045",
+          "family_id": "family-5-rank-quality",
+          "inner_fills": 556,
+          "inner_sharpes": [
+            0.4397467667665576,
+            1.0089083142809885
+          ],
+          "iqr": 0.5691615475144309,
+          "median": 0.724327540523773,
+          "score": 0.43974676676655755,
+          "turnover": 4.412698412698413
+        },
+        {
+          "candidate_id": "A09",
+          "family_id": "A09",
+          "inner_fills": 25,
+          "inner_sharpes": [
+            1.0162137908159952,
+            0.26044845593464205
+          ],
+          "iqr": 0.7557653348813531,
+          "median": 0.6383311233753186,
+          "score": 0.26044845593464205,
+          "turnover": 0.1984126984126984
+        },
+        {
+          "candidate_id": "H020",
+          "family_id": "family-2-rank-horizon",
+          "inner_fills": 584,
+          "inner_sharpes": [
+            0.21144097086093414,
+            1.4806289091259401
+          ],
+          "iqr": 1.269187938265006,
+          "median": 0.8460349399934372,
+          "score": 0.21144097086093416,
+          "turnover": 4.634920634920635
+        },
+        {
+          "candidate_id": "A06",
+          "family_id": "A06",
+          "inner_fills": 202,
+          "inner_sharpes": [
+            0.5609416672370073,
+            0.02288464750902494
+          ],
+          "iqr": 0.5380570197279824,
+          "median": 0.29191315737301615,
+          "score": 0.02288464750902497,
+          "turnover": 1.6031746031746033
+        },
+        {
+          "candidate_id": "H012",
+          "family_id": "family-2-rank-horizon",
+          "inner_fills": 616,
+          "inner_sharpes": [
+            0.01905531324234657,
+            0.6614596193007428
+          ],
+          "iqr": 0.6424043060583963,
+          "median": 0.3402574662715447,
+          "score": 0.01905531324234655,
+          "turnover": 4.888888888888889
+        },
+        {
+          "candidate_id": "A04",
+          "family_id": "A04",
+          "inner_fills": 46,
+          "inner_sharpes": [
+            0.4769419938827012,
+            -0.06516273043956834
+          ],
+          "iqr": 0.5421047243222695,
+          "median": 0.20588963172156644,
+          "score": -0.06516273043956833,
+          "turnover": 0.36507936507936506
+        },
+        {
+          "candidate_id": "H099",
+          "family_id": "family-10-universe-and-combinations",
+          "inner_fills": 560,
+          "inner_sharpes": [
+            -0.14651614830887388,
+            0.12154657641275349
+          ],
+          "iqr": 0.2680627247216274,
+          "median": -0.012484785948060198,
+          "score": -0.14651614830887388,
+          "turnover": 4.444444444444445
+        }
+      ],
+      "outer": {
+        "cagr": -0.19650338190395444,
+        "candidate_id": "H018",
+        "fees": 0.0,
+        "fills": 283,
+        "max_drawdown": 0.2837976645731263,
+        "problems": [],
+        "runtime_seconds": 1.8089572500030044,
+        "sharpe": -0.5314867457319239,
+        "total_return": -0.10382159569250038,
+        "volatility": 0.3445428410639884
+      },
+      "selected": "H018"
+    },
+    "f5": {
+      "all_outer_top": [
+        {
+          "cagr": 1.317786665788463,
+          "candidate_id": "H095",
+          "family_id": "family-10-universe-and-combinations",
+          "fills": 288,
+          "max_drawdown": 0.12820739104950774,
+          "sharpe": 3.0801557142162554,
+          "total_return": 0.5167448026649997
+        },
+        {
+          "cagr": 1.0375017288721478,
+          "candidate_id": "H100",
+          "family_id": "family-10-universe-and-combinations",
+          "fills": 178,
+          "max_drawdown": 0.08992114257543249,
+          "sharpe": 3.0129158891395025,
+          "total_return": 0.42289814664607084
+        },
+        {
+          "cagr": 0.11054612242205564,
+          "candidate_id": "A05",
+          "family_id": "A05",
+          "fills": 39,
+          "max_drawdown": 0.008780453274207844,
+          "sharpe": 2.8675112621184957,
+          "total_return": 0.05303070527499987
+        },
+        {
+          "cagr": 0.23213401306041614,
+          "candidate_id": "A06",
+          "family_id": "A06",
+          "fills": 85,
+          "max_drawdown": 0.024408688632241438,
+          "sharpe": 2.862024226778616,
+          "total_return": 0.10835128060000065
+        },
+        {
+          "cagr": 0.6253050829549902,
+          "candidate_id": "H058",
+          "family_id": "family-6-concentration",
+          "fills": 290,
+          "max_drawdown": 0.06184681446068063,
+          "sharpe": 2.70720271329869,
+          "total_return": 0.27212268105500037
+        },
+        {
+          "cagr": 0.24826766581412985,
+          "candidate_id": "H057",
+          "family_id": "family-6-concentration",
+          "fills": 290,
+          "max_drawdown": 0.03209790937973833,
+          "sharpe": 2.41307291653536,
+          "total_return": 0.11615725558249967
+        },
+        {
+          "cagr": 0.8516199172152945,
+          "candidate_id": "H070",
+          "family_id": "family-7-vol-target",
+          "fills": 290,
+          "max_drawdown": 0.14891298497931016,
+          "sharpe": 2.14233710440929,
+          "total_return": 0.35701791667250093
+        },
+        {
+          "cagr": 0.6811217847950499,
+          "candidate_id": "H069",
+          "family_id": "family-7-vol-target",
+          "fills": 288,
+          "max_drawdown": 0.12512314342977326,
+          "sharpe": 2.1304173003965463,
+          "total_return": 0.2935877539349996
+        },
+        {
+          "cagr": 1.562118539366932,
+          "candidate_id": "H039",
+          "family_id": "family-4-exit",
+          "fills": 158,
+          "max_drawdown": 0.28555047415373014,
+          "sharpe": 2.1223969517226453,
+          "total_return": 0.5939758914692852
+        },
+        {
+          "cagr": 1.0658473872198937,
+          "candidate_id": "H085",
+          "family_id": "family-9-turnover",
+          "fills": 148,
+          "max_drawdown": 0.18610689400272507,
+          "sharpe": 1.9603725661905977,
+          "total_return": 0.43267355054250056
+        }
+      ],
+      "inner_leaderboard": [
+        {
+          "candidate_id": "H090",
+          "family_id": "family-9-turnover",
+          "inner_fills": 622,
+          "inner_sharpes": [
+            0.6561579378311578,
+            0.8926997521117495
+          ],
+          "iqr": 0.23654181428059162,
+          "median": 0.7744288449714536,
+          "score": 0.6561579378311577,
+          "turnover": 4.897637795275591
+        },
+        {
+          "candidate_id": "H091",
+          "family_id": "family-10-universe-and-combinations",
+          "inner_fills": 523,
+          "inner_sharpes": [
+            0.3692530400342671,
+            0.6221065308936692
+          ],
+          "iqr": 0.25285349085940206,
+          "median": 0.4956797854639682,
+          "score": 0.3692530400342672,
+          "turnover": 4.118110236220472
+        },
+        {
+          "candidate_id": "A09",
+          "family_id": "A09",
+          "inner_fills": 24,
+          "inner_sharpes": [
+            0.26044845593464205,
+            0.6427499074178352
+          ],
+          "iqr": 0.38230145148319317,
+          "median": 0.45159918167623864,
+          "score": 0.26044845593464205,
+          "turnover": 0.1889763779527559
+        },
+        {
+          "candidate_id": "H007",
+          "family_id": "family-1-trend-speed",
+          "inner_fills": 557,
+          "inner_sharpes": [
+            1.8252930111594874,
+            0.19698088267168978
+          ],
+          "iqr": 1.6283121284877975,
+          "median": 1.0111369469155886,
+          "score": 0.1969808826716899,
+          "turnover": 4.3858267716535435
+        },
+        {
+          "candidate_id": "H020",
+          "family_id": "family-2-rank-horizon",
+          "inner_fills": 551,
+          "inner_sharpes": [
+            1.4806289091259401,
+            0.0969928891380489
+          ],
+          "iqr": 1.3836360199878912,
+          "median": 0.7888108991319945,
+          "score": 0.09699288913804893,
+          "turnover": 4.338582677165355
+        },
+        {
+          "candidate_id": "H009",
+          "family_id": "family-1-trend-speed",
+          "inner_fills": 567,
+          "inner_sharpes": [
+            1.7791845273504492,
+            0.07367408434481604
+          ],
+          "iqr": 1.7055104430056331,
+          "median": 0.9264293058476326,
+          "score": 0.07367408434481604,
+          "turnover": 4.464566929133858
+        },
+        {
+          "candidate_id": "H057",
+          "family_id": "family-6-concentration",
+          "inner_fills": 573,
+          "inner_sharpes": [
+            0.5934683587199567,
+            0.038478376239506375
+          ],
+          "iqr": 0.5549899824804504,
+          "median": 0.31597336747973154,
+          "score": 0.03847837623950634,
+          "turnover": 4.511811023622047
+        },
+        {
+          "candidate_id": "A06",
+          "family_id": "A06",
+          "inner_fills": 174,
+          "inner_sharpes": [
+            0.02288464750902494,
+            0.3002275777806288
+          ],
+          "iqr": 0.27734293027160384,
+          "median": 0.1615561126448269,
+          "score": 0.02288464750902497,
+          "turnover": 1.3700787401574803
+        },
+        {
+          "candidate_id": "H056",
+          "family_id": "family-6-concentration",
+          "inner_fills": 1102,
+          "inner_sharpes": [
+            0.9400263639850296,
+            0.005559245011862252
+          ],
+          "iqr": 0.9344671189731674,
+          "median": 0.4727928044984459,
+          "score": 0.005559245011862224,
+          "turnover": 8.67716535433071
+        },
+        {
+          "candidate_id": "H015",
+          "family_id": "family-2-rank-horizon",
+          "inner_fills": 565,
+          "inner_sharpes": [
+            1.5924491054460863,
+            -0.04746123307416458
+          ],
+          "iqr": 1.639910338520251,
+          "median": 0.7724939361859608,
+          "score": -0.04746123307416461,
+          "turnover": 4.448818897637795
+        }
+      ],
+      "outer": {
+        "cagr": 0.0415163257142237,
+        "candidate_id": "H090",
+        "fees": 0.0,
+        "fills": 304,
+        "max_drawdown": 0.17024326891193697,
+        "problems": [],
+        "runtime_seconds": 1.7865192079989356,
+        "sharpe": 0.28721032868705076,
+        "total_return": 0.020362394777498904,
+        "volatility": 0.37137545899004354
+      },
+      "selected": "H090"
+    },
+    "f6": {
+      "all_outer_top": [
+        {
+          "cagr": 5.543691303585894,
+          "candidate_id": "H078",
+          "family_id": "family-8-market-gate",
+          "fills": 196,
+          "max_drawdown": 0.20455675896865844,
+          "sharpe": 3.4028342873146897,
+          "total_return": 1.5630023367449994
+        },
+        {
+          "cagr": 4.60569384149456,
+          "candidate_id": "H079",
+          "family_id": "family-8-market-gate",
+          "fills": 152,
+          "max_drawdown": 0.1658628705200621,
+          "sharpe": 3.2958084811661688,
+          "total_return": 1.3718285953725005
+        },
+        {
+          "cagr": 5.60781484705369,
+          "candidate_id": "H024",
+          "family_id": "family-3-atr",
+          "fills": 208,
+          "max_drawdown": 0.37438634561326645,
+          "sharpe": 2.9559438426423115,
+          "total_return": 1.5755553127025
+        },
+        {
+          "cagr": 5.293206750283535,
+          "candidate_id": "H025",
+          "family_id": "family-3-atr",
+          "fills": 186,
+          "max_drawdown": 0.34458007329081786,
+          "sharpe": 2.8839043942113483,
+          "total_return": 1.5133686693625021
+        },
+        {
+          "cagr": 2.7617677412185393,
+          "candidate_id": "H084",
+          "family_id": "family-9-turnover",
+          "fills": 190,
+          "max_drawdown": 0.26852055329086133,
+          "sharpe": 2.8111668238810164,
+          "total_return": 0.9421677595325013
+        },
+        {
+          "cagr": 4.174891520095809,
+          "candidate_id": "H014",
+          "family_id": "family-2-rank-horizon",
+          "fills": 269,
+          "max_drawdown": 0.3467025559780218,
+          "sharpe": 2.7747588014000284,
+          "total_return": 1.278681273580002
+        },
+        {
+          "cagr": 3.809942674268523,
+          "candidate_id": "H015",
+          "family_id": "family-2-rank-horizon",
+          "fills": 268,
+          "max_drawdown": 0.3487317396118187,
+          "sharpe": 2.6671942721139787,
+          "total_return": 1.196697719555
+        },
+        {
+          "cagr": 3.3545138894175937,
+          "candidate_id": "H071",
+          "family_id": "family-8-market-gate",
+          "fills": 204,
+          "max_drawdown": 0.2991834996268964,
+          "sharpe": 2.566212401587119,
+          "total_return": 1.089901586389999
+        },
+        {
+          "cagr": 3.5055886255967437,
+          "candidate_id": "H094",
+          "family_id": "family-10-universe-and-combinations",
+          "fills": 270,
+          "max_drawdown": 0.38625387612719075,
+          "sharpe": 2.530139817101559,
+          "total_return": 1.125920262000001
+        },
+        {
+          "cagr": 2.5839694220249148,
+          "candidate_id": "H040",
+          "family_id": "family-4-exit",
+          "fills": 274,
+          "max_drawdown": 0.3947711434461083,
+          "sharpe": 2.414524176677367,
+          "total_return": 0.8956201231578558
+        }
+      ],
+      "inner_leaderboard": [
+        {
+          "candidate_id": "A01",
+          "family_id": "A01",
+          "inner_fills": 30,
+          "inner_sharpes": [
+            1.5252258430643308,
+            1.5137516603002383
+          ],
+          "iqr": 0.011474182764092511,
+          "median": 1.5194887516822846,
+          "score": 1.5137516603002383,
+          "turnover": 0.23622047244094488
+        },
+        {
+          "candidate_id": "A05",
+          "family_id": "A05",
+          "inner_fills": 58,
+          "inner_sharpes": [
+            1.1016234433886225,
+            2.8675112621184957
+          ],
+          "iqr": 1.7658878187298732,
+          "median": 1.984567352753559,
+          "score": 1.1016234433886223,
+          "turnover": 0.4566929133858268
+        },
+        {
+          "candidate_id": "A03",
+          "family_id": "A03",
+          "inner_fills": 20,
+          "inner_sharpes": [
+            0.9009968185821481,
+            1.310641718383694
+          ],
+          "iqr": 0.40964489980154595,
+          "median": 1.1058192684829211,
+          "score": 0.9009968185821482,
+          "turnover": 0.15748031496062992
+        },
+        {
+          "candidate_id": "A09",
+          "family_id": "A09",
+          "inner_fills": 22,
+          "inner_sharpes": [
+            0.6427499074178352,
+            1.0888591946902277
+          ],
+          "iqr": 0.4461092872723925,
+          "median": 0.8658045510540315,
+          "score": 0.6427499074178353,
+          "turnover": 0.1732283464566929
+        },
+        {
+          "candidate_id": "H091",
+          "family_id": "family-10-universe-and-combinations",
+          "inner_fills": 518,
+          "inner_sharpes": [
+            0.6221065308936692,
+            1.7118552565696499
+          ],
+          "iqr": 1.0897487256759808,
+          "median": 1.1669808937316595,
+          "score": 0.6221065308936691,
+          "turnover": 4.078740157480315
+        },
+        {
+          "candidate_id": "A06",
+          "family_id": "A06",
+          "inner_fills": 173,
+          "inner_sharpes": [
+            0.3002275777806288,
+            2.862024226778616
+          ],
+          "iqr": 2.561796648997987,
+          "median": 1.5811259022796222,
+          "score": 0.3002275777806287,
+          "turnover": 1.3622047244094488
+        },
+        {
+          "candidate_id": "H090",
+          "family_id": "family-9-turnover",
+          "inner_fills": 622,
+          "inner_sharpes": [
+            0.8926997521117495,
+            0.28721032868705076
+          ],
+          "iqr": 0.6054894234246987,
+          "median": 0.5899550403994,
+          "score": 0.2872103286870507,
+          "turnover": 4.897637795275591
+        },
+        {
+          "candidate_id": "H007",
+          "family_id": "family-1-trend-speed",
+          "inner_fills": 575,
+          "inner_sharpes": [
+            0.19698088267168978,
+            1.3338287908357165
+          ],
+          "iqr": 1.1368479081640266,
+          "median": 0.7654048367537032,
+          "score": 0.1969808826716899,
+          "turnover": 4.52755905511811
+        },
+        {
+          "candidate_id": "H020",
+          "family_id": "family-2-rank-horizon",
+          "inner_fills": 577,
+          "inner_sharpes": [
+            0.0969928891380489,
+            0.1310191045607705
+          ],
+          "iqr": 0.034026215422721606,
+          "median": 0.11400599684940971,
+          "score": 0.0969928891380489,
+          "turnover": 4.543307086614173
+        },
+        {
+          "candidate_id": "A04",
+          "family_id": "A04",
+          "inner_fills": 94,
+          "inner_sharpes": [
+            1.5453269367112337,
+            0.09437523774900332
+          ],
+          "iqr": 1.4509516989622304,
+          "median": 0.8198510872301185,
+          "score": 0.09437523774900325,
+          "turnover": 0.7401574803149606
+        }
+      ],
+      "outer": {
+        "cagr": 0.116824351895082,
+        "candidate_id": "A01",
+        "fees": 0.0,
+        "fills": 14,
+        "max_drawdown": 0.03175379456944116,
+        "problems": [],
+        "runtime_seconds": 0.3946829170017736,
+        "sharpe": 1.4871432242060896,
+        "total_return": 0.056918995365,
+        "volatility": 0.07641360000260837
+      },
+      "selected": "A01"
+    }
+  },
+  "procedure": "retrospective walk-forward, per fold select from inner-validation only (median-0.5*IQR), freeze, score held-out outer test",
+  "selection_per_fold": [
+    {
+      "discovery_end": "2023-09-09",
+      "fold": "f1",
+      "outer_max_dd": 0.0313,
+      "outer_sharpe": 0.4338,
+      "outer_total_return": 0.014,
+      "selected_id": "A06",
+      "selected_inner_sharpe": 1.9612
+    },
+    {
+      "discovery_end": "2024-03-09",
+      "fold": "f2",
+      "outer_max_dd": 0.3081,
+      "outer_sharpe": -0.4216,
+      "outer_total_return": -0.1053,
+      "selected_id": "H010",
+      "selected_inner_sharpe": 2.577
+    },
+    {
+      "discovery_end": "2024-09-09",
+      "fold": "f3",
+      "outer_max_dd": 0.3041,
+      "outer_sharpe": 1.4119,
+      "outer_total_return": 0.3234,
+      "selected_id": "H018",
+      "selected_inner_sharpe": 1.4069
+    },
+    {
+      "discovery_end": "2025-03-09",
+      "fold": "f4",
+      "outer_max_dd": 0.2838,
+      "outer_sharpe": -0.5315,
+      "outer_total_return": -0.1038,
+      "selected_id": "H018",
+      "selected_inner_sharpe": 1.4069
+    },
+    {
+      "discovery_end": "2025-09-09",
+      "fold": "f5",
+      "outer_max_dd": 0.1702,
+      "outer_sharpe": 0.2872,
+      "outer_total_return": 0.0204,
+      "selected_id": "H090",
+      "selected_inner_sharpe": 0.6562
+    },
+    {
+      "discovery_end": "2026-03-09",
+      "fold": "f6",
+      "outer_max_dd": 0.0318,
+      "outer_sharpe": 1.4871,
+      "outer_total_return": 0.0569,
+      "selected_id": "A01",
+      "selected_inner_sharpe": 1.5138
+    }
+  ],
+  "stitch_note": "independent from-cash fold runs chained with charged boundary turnover; NOT gapless continuous carry",
+  "stitched_selected_track": {
+    "cagr": 0.03137,
+    "cost_bps_per_side": 3.5,
+    "max_drawdown": 0.426708,
+    "sessions": 748,
+    "sharpe": 0.260642,
+    "total_return": 0.096245
+  }
+}
