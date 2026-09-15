@@ -64,6 +64,12 @@ market entry is likewise eligible on the following daily bar because daily
 OHLCV does not identify whether the low occurred before or after the entry.
 Intraday input is required to model that ordering within the entry session.
 
+The HTS native research harness has a stricter, strategy-owned **virtual-stop**
+contract: a breached completed close latches a later market exit and never uses
+the triggering low or credits the stop as a fill. Its exact clock-hour timing
+and the separate resting-stop qualification boundary are documented in
+[`HTS Hourly and Execution Convention`](investigations/2026-09-15_HOURLY_CONVENTION.md).
+
 Vectorization may prepare indicators, ranks, session maps, and immutable signal
 tables. The serial broker loop still owns cash, whole-share quantities, fees,
 financing, order state, stop activation, and fills. Research accelerators must
@@ -96,6 +102,7 @@ earlier snapshot at the same simulated time.
 
 - Handoffs: `docs/handoffs/`
 - Investigations: `docs/investigations/`
+- HTS clock-hour contract: `docs/investigations/2026-09-15_HOURLY_CONVENTION.md`
 - Performance + parity + startup: `docs/BACKTESTING_PERFORMANCE.md`
 - Latest session handoff (IBKR speed + resilience): `docs/handoffs/2026-01-26_IBKR_SPEED_RESILIENCE_MASTER_HANDOFF.md`
 

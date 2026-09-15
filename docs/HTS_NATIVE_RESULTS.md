@@ -13,6 +13,12 @@ Audience: Strategy owner and strategy developers
 
 ## Overview
 
+> **Historical hourly status:** every hourly/control figure below was produced
+> with the old `09:30-15:30` relabel convention. It is historical until the
+> clock-hour rebaseline is complete; do not compare or rank it as current
+> evidence. See
+> [`2026-09-15_HOURLY_CONVENTION.md`](investigations/2026-09-15_HOURLY_CONVENTION.md).
+
 This document records the outcome of
 `docs/HTS_REMAINING_IMPLEMENTATION_PLAN.md`: the 71 configurations that were not
 runnable are now implemented on `native-lumibot-backtesting` (`PandasDataBacktesting`
@@ -182,9 +188,9 @@ substitute inputs:
 
 Additional known limitations:
 
-- Hourly bars are mapped from archived 09:00-15:00 ET sessions onto NYSE
-  09:30-15:30 labels. This is a declared convention, not a verified statement of
-  bar completion times.
+- Historical hourly bars used the `09:30-15:30` relabel convention. That result
+  is preserved but stale under the frozen clock-hour contract; see the status
+  note above.
 - Simulated resting stop prices come from hourly OHLC. Gap-through fills use the
   broker's open-price convention, but these are not guaranteed live fills.
 - Results are price-return evidence; the archives do not carry cash

@@ -102,6 +102,7 @@ def build_manifest(
     from strategy_lab.native_experiments import (
         DAILY_DB,
         ENGINE_LABEL,
+        HTS_HOURLY_CONVENTION,
         HOURLY_DB,
         IMPLEMENTATION_REVISION,
         WINDOW_BY_LABEL,
@@ -138,6 +139,10 @@ def build_manifest(
         "inputs": {
             "daily": {"path": str(DAILY_DB.relative_to(ROOT)), "sha256": _file_checksum(DAILY_DB)},
             "hourly": {"path": str(HOURLY_DB.relative_to(ROOT)), "sha256": _file_checksum(HOURLY_DB)},
+        },
+        "bar_conventions": {
+            "hourly": HTS_HOURLY_CONVENTION,
+            "daily_alternatives": "exchange-session daily bars; decisions use prior completed sessions",
         },
         "cost_convention": "3.5 bps per side, submitted on buy and sell fills",
         "registry_hash": sha256(

@@ -10,7 +10,13 @@ Audience: Strategy developers and operators
 
 `strategy_lab/hts_v1_core.py` is the authority for daily selection, hourly ATR, virtual stops, order intents, restart state, and decision journals. It uses the prior completed daily session for intraday selection. A virtual-stop breach is observed only when the hourly bar completes and queues a market sell for a later executable bar; it never credits a historical stop price.
 
-The runtime wrapper stays dry by default. It requires an explicit normalized bar provider so a paper session cannot silently use a different feed, adjustment basis, timezone, or hourly boundary than the replay. Live Alpaca ingestion is deliberately injected by the paper launcher; `scripts/run_hts_v1_paper.py` validates local-cache inputs only and neither starts paper trading nor loads broker credentials. Every configuration has a fingerprint and every feature set has an input hash. The replay comparator requires the same timestamps, selections, and order intents.
+For the native HTS research harness, the exact cadence contract is
+[`2026-09-15_HOURLY_CONVENTION.md`](investigations/2026-09-15_HOURLY_CONVENTION.md):
+clock-hour `09:00` through `15:00` ET bars contain `[T, T+1h)` and become
+available only at `T+1h`. This document does not turn the retired custom replay
+or its paper wrapper into the native research engine.
+
+The runtime wrapper stays dry by default. It requires an explicit normalized bar provider so a paper session cannot silently use a different feed, adjustment basis, timezone, or the clock-hour/available-at boundary above. Live Alpaca ingestion is deliberately injected by the paper launcher; `scripts/run_hts_v1_paper.py` validates local-cache inputs only and neither starts paper trading nor loads broker credentials. Every configuration has a fingerprint and every feature set has an input hash. The replay comparator requires the same timestamps, selections, and order intents.
 
 ## Operating sequence
 

@@ -172,6 +172,21 @@ def test_every_control_default_validates_against_its_spec() -> None:
         spec.validate_value(HTS_BASELINE[spec.name])
 
 
+def test_reentry_cooldown_is_the_only_family_nine_and_ten_parameter() -> None:
+    # The native expiry rule treats -1 and 0 as disabled; the registry keeps one
+    # canonical key so a candidate can never resolve two conflicting cooldowns.
+    legacy_name = "stop" + "_cooldown_sessions"
+    for family in HTS_FAMILIES:
+        names = {spec.name for spec in family.parameters}
+        assert legacy_name not in names
+    assert "reentry_cooldown_bars" in {
+        spec.name for spec in HTS_FAMILIES[8].parameters
+    }
+    assert "reentry_cooldown_bars" in {
+        spec.name for spec in HTS_FAMILIES[9].parameters
+    }
+
+
 def test_fingerprint_changes_when_a_resolved_parameter_changes() -> None:
     registry = get_registry()
     base = registry.get("H052")

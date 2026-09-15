@@ -99,10 +99,13 @@ def _add_months(value: str, months: int) -> str:
 
 BENCHMARK_SYMBOLS: tuple[str, ...] = ("SPY", "QQQ")
 ENGINE_LABEL = "lumibot.strategies.Strategy.run_backtest + BacktestingBroker"
+HTS_HOURLY_CONVENTION = (
+    "clock-hour 09:00-15:00 ET; a bar labelled T contains [T,T+1h) and is only known at T+1h"
+)
 # Bump this whenever a strategy mechanism changes.  The runner refuses to treat
 # an artifact from a different revision as a completed result under --resume,
 # so results from two implementations can never be mixed.
-IMPLEMENTATION_REVISION = "hts-native-2026-09-14-2"
+IMPLEMENTATION_REVISION = "hts-native-2026-09-15-clock-hour-1"
 
 
 @dataclass(frozen=True)
@@ -242,19 +245,23 @@ def _hourly_features(frame: pd.DataFrame, *, atr_period: int) -> pd.DataFrame:
     return result
 
 
-def _lumibot_hourly(frame: pd.DataFrame) -> pd.DataFrame:
-    """Map archived 09:00-15:00 ET bars onto NYSE hourly timestamps.
+def _canonical_hourly_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    """Return the one exact clock-hour frame shared by HTS features and broker data."""
+    index = frame.index
+    exact_clock_hour = (
+        (index.hour >= 9)
+        & (index.hour <= 15)
+        & (index.minute == 0)
+        & (index.second == 0)
+        & (index.microsecond == 0)
+        & (index.nanosecond == 0)
+    )
+    return frame.loc[exact_clock_hour, ["open", "high", "low", "close", "volume"]].copy()
 
-    This is the same convention ``scripts/run_full_lumibot_backtests.py`` uses so
-    results remain comparable.  The source bars' contents are not validated here;
-    that remains the open bar-cleanliness item in the plan.
-    """
-    source = frame[(frame.index.hour >= 9) & (frame.index.hour <= 15)].copy()
-    if source.empty:
-        return source
-    source.index = source.index.normalize() + pd.to_timedelta(source.index.hour - 9, unit="h")
-    source.index = source.index + pd.Timedelta(hours=9, minutes=30)
-    return source[["open", "high", "low", "close", "volume"]]
+
+def _lumibot_hourly(frame: pd.DataFrame) -> pd.DataFrame:
+    """Retain canonical 09:00-15:00 clock-hour labels for LumiBot ``Data``."""
+    return _canonical_hourly_frame(frame)
 
 
 def _benchmark_features(frame: pd.DataFrame) -> pd.DataFrame:
@@ -306,7 +313,14 @@ def prepare_inputs(params: Mapping[str, Any], window: ExperimentWindow) -> Prepa
     atr_period = int(params["atr_period"])
     breadth_sma = int(params["breadth_sma"])
 
-    ordered = tuple(symbol for symbol in universe_symbols if symbol in daily_raw and symbol in hourly_raw)
+    hourly_canonical = {
+        symbol: _canonical_hourly_frame(frame) for symbol, frame in hourly_raw.items()
+    }
+    ordered = tuple(
+        symbol
+        for symbol in universe_symbols
+        if symbol in daily_raw and not hourly_canonical.get(symbol, pd.DataFrame()).empty
+    )
     daily = {
         symbol: daily_feature_frame(
             daily_raw[symbol],
@@ -317,7 +331,10 @@ def prepare_inputs(params: Mapping[str, Any], window: ExperimentWindow) -> Prepa
         )
         for symbol in ordered
     }
-    hourly = {symbol: _hourly_features(hourly_raw[symbol], atr_period=atr_period) for symbol in ordered}
+    hourly = {
+        symbol: _hourly_features(hourly_canonical[symbol], atr_period=atr_period)
+        for symbol in ordered
+    }
     benchmark = {
         symbol: _benchmark_features(daily_raw[symbol])
         for symbol in BENCHMARK_SYMBOLS
@@ -336,16 +353,16 @@ def prepare_inputs(params: Mapping[str, Any], window: ExperimentWindow) -> Prepa
     )
     sessions = tuple(sorted({stamp.date() for frame in daily.values() for stamp in frame.index}))
     lumibot_data = tuple(
-        # Hand each Data its own frame; LumiBot rewrites the index of what it is
-        # given, so sharing ``hourly_raw`` would corrupt the strategy's own copy.
-        Data(Asset(symbol), _lumibot_hourly(hourly_raw[symbol]), timestep="hour", quote=USD)
+        # Hand each Data its own canonical frame; LumiBot rewrites the index of
+        # what it is given, so sharing the strategy feature frame would corrupt it.
+        Data(Asset(symbol), _lumibot_hourly(hourly_canonical[symbol]), timestep="hour", quote=USD)
         for symbol in ordered
     )
     # The raw per-symbol frames are no longer needed once the derived feature
     # frames and the LumiBot payloads exist.  Releasing them here roughly halves
     # peak resident memory per worker, which is what lets several workers share
     # this machine without exhausting RAM.
-    del daily_raw, hourly_raw
+    del daily_raw, hourly_raw, hourly_canonical
     gc.collect()
     payload = {
         "window": [window.label, window.start, window.end],
@@ -354,6 +371,7 @@ def prepare_inputs(params: Mapping[str, Any], window: ExperimentWindow) -> Prepa
         "lookbacks": [trend_sma, return_period, liquidity_period, atr_period, breadth_sma],
         "daily_rows": int(sum(len(frame) for frame in daily.values())),
         "hourly_rows": int(sum(len(frame) for frame in hourly.values())),
+        "hourly_convention": HTS_HOURLY_CONVENTION,
     }
     feature_hash = sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
     return PreparedInputs(
@@ -430,6 +448,31 @@ class RunContext:
 _CONTEXT: RunContext | None = None
 
 
+def build_virtual_stop_gap_event(
+    trigger: Mapping[str, Any],
+    *,
+    fill_time: pd.Timestamp,
+    fill_price: float,
+    fill_quantity: float,
+    fill_session: Any,
+) -> dict[str, Any]:
+    """Join immutable virtual-stop trigger context to its actual broker fill."""
+    entry_price = float(trigger["entry_price"])
+    stop_level = float(trigger["stop_level"])
+    price = float(fill_price)
+    gap = price - stop_level
+    return {
+        **dict(trigger),
+        "fill_time": pd.Timestamp(fill_time).isoformat(),
+        "fill_price": price,
+        "fill_quantity": float(fill_quantity),
+        "fill_session": str(fill_session),
+        "fill_minus_stop_dollars_per_share": gap,
+        "fill_minus_stop_pct": gap / stop_level,
+        "entry_to_fill_return": price / entry_price - 1.0,
+    }
+
+
 class RegistryHtsStrategy(Strategy):
     """The control contract with every catalog mechanism exposed and consumed."""
 
@@ -449,6 +492,9 @@ class RegistryHtsStrategy(Strategy):
         self._pending_buys: dict[str, dict[str, Any]] = {}
         self._pending_sells: set[str] = set()
         self._pending_sell_reason: dict[str, str] = {}
+        self._stop_exit_context: dict[str, dict[str, Any]] = {}
+        self._stop_gap_events: list[dict[str, Any]] = []
+        self._lifecycle_trace: list[dict[str, Any]] = []
         self._protective: dict[str, Order] = {}
         self._cooldowns: dict[str, int] = {}
         self._selected: tuple[str, ...] = ()
@@ -597,7 +643,14 @@ class RegistryHtsStrategy(Strategy):
         except Exception:
             pass
 
-    def _submit_sell(self, symbol: str, reason: str, reference: float) -> None:
+    def _submit_sell(
+        self,
+        symbol: str,
+        reason: str,
+        reference: float,
+        *,
+        stop_context: Mapping[str, Any] | None = None,
+    ) -> None:
         state = self._positions.get(symbol)
         if state is None or symbol in self._pending_sells:
             return
@@ -605,6 +658,19 @@ class RegistryHtsStrategy(Strategy):
         order = self.create_order(symbol, quantity=state["quantity"], side="sell", order_type="market")
         self._pending_sells.add(symbol)
         self._pending_sell_reason[symbol] = reason
+        if stop_context is not None:
+            context = dict(stop_context)
+            context["order_id"] = str(order.identifier)
+            self._stop_exit_context[symbol] = context
+            self._lifecycle_trace.append({
+                "event": "virtual_stop_submitted",
+                "symbol": symbol,
+                "order_id": context["order_id"],
+                "engine_time": context["engine_time"],
+                "completed_source_bar": context["trigger_timestamp"],
+                "submission_time": context["submission_time"],
+                "source_fill_bar": context["source_fill_bar"],
+            })
         self.submit_order(order)
         self._journal.append({"event": "intent", "side": "sell", "symbol": symbol,
                               "reason": reason, "reference": reference})
@@ -644,12 +710,59 @@ class RegistryHtsStrategy(Strategy):
         if candidate > float(state["stop"]):
             state["stop"] = candidate
 
-    def _update_risk(self, day: Any, hour: int) -> None:
+    def _submit_virtual_stop(
+        self,
+        symbol: str,
+        *,
+        mode: str,
+        reason: str,
+        row: pd.Series,
+        stamp: pd.Timestamp,
+        engine_time: pd.Timestamp,
+    ) -> bool:
+        """Latch a virtual stop only when the current source fill bar exists."""
+        state = self._positions.get(symbol)
+        if state is None or symbol in self._pending_sells:
+            return symbol in self._pending_sells
+        execution_price = self._execution_price(symbol, stamp)
+        trigger_stamp = pd.Timestamp(row.name)
+        if execution_price is None:
+            self._lifecycle_trace.append({
+                "event": "virtual_stop_deferred_no_executable_bar",
+                "symbol": symbol,
+                "engine_time": pd.Timestamp(engine_time).isoformat(),
+                "completed_source_bar": trigger_stamp.isoformat(),
+                "submission_time": None,
+                "fill_time": None,
+                "source_fill_bar": None,
+            })
+            return False
+        context = {
+            "symbol": symbol,
+            "mode": mode,
+            "reason": reason,
+            "entry_price": float(state["entry_price"]),
+            "stop_level": float(state["stop"]),
+            "trigger_timestamp": trigger_stamp.isoformat(),
+            "trigger_close": float(row["close"]),
+            "trigger_session": str(trigger_stamp.date()),
+            "overnight_gap_exposed": bool(trigger_stamp.hour == 15),
+            "engine_time": pd.Timestamp(engine_time).isoformat(),
+            "submission_time": pd.Timestamp(engine_time).isoformat(),
+            "source_fill_bar": pd.Timestamp(stamp).isoformat(),
+        }
+        self._submit_sell(symbol, reason, float(row["close"]), stop_context=context)
+        return symbol in self._pending_sells
+
+    def _update_risk(self, day: Any, hour: int, *, engine_time: pd.Timestamp | None = None) -> None:
         mode = str(self._params["exit_mode"])
         atr_k = float(self._params["atr_k"])
         stamp = self._stamp(day, hour)
+        engine_time = pd.Timestamp(engine_time if engine_time is not None else stamp)
         time_exit = self._params["time_exit_sessions"]
         for symbol, state in list(self._positions.items()):
+            if symbol in self._pending_sells:
+                continue
             row = self._completed_row(symbol, stamp)
             if row is None:
                 continue
@@ -663,7 +776,8 @@ class RegistryHtsStrategy(Strategy):
             if time_exit is not None:
                 held = self._session_index.get(day, 0) - self._session_index.get(state["entry_session"], 0)
                 if held >= int(time_exit):
-                    self._submit_sell(symbol, "time_exit", close)
+                    if self._execution_price(symbol, stamp) is not None:
+                        self._submit_sell(symbol, "time_exit", close)
                     continue
             if mode == "resting-stop-2atr":
                 # The resting broker order owns this exit; there is no virtual trail.
@@ -674,8 +788,11 @@ class RegistryHtsStrategy(Strategy):
                 if seeded and close <= stop:
                     state["breach_count"] = int(state.get("breach_count", 0)) + 1
                     if state["breach_count"] >= 2:
-                        self._submit_sell(symbol, "stop_confirm", close)
-                        continue
+                        if self._submit_virtual_stop(
+                            symbol, mode=mode, reason="stop_confirm", row=row,
+                            stamp=stamp, engine_time=engine_time,
+                        ):
+                            continue
                 else:
                     state["breach_count"] = 0
                 self._ratchet(state, close, atr, atr_k)
@@ -683,14 +800,20 @@ class RegistryHtsStrategy(Strategy):
             if mode in ("breach-buffer-0.25-atr", "breach-buffer-0.50-atr"):
                 buffer = 0.25 if "0.25" in mode else 0.50
                 if seeded and close <= stop - buffer * atr:
-                    self._submit_sell(symbol, "stop_buffer", close)
-                    continue
+                    if self._submit_virtual_stop(
+                        symbol, mode=mode, reason="stop_buffer", row=row,
+                        stamp=stamp, engine_time=engine_time,
+                    ):
+                        continue
                 self._ratchet(state, close, atr, atr_k)
                 continue
             if mode == "chandelier-since-entry":
                 if seeded and close <= stop:
-                    self._submit_sell(symbol, "chandelier", close)
-                    continue
+                    if self._submit_virtual_stop(
+                        symbol, mode=mode, reason="chandelier", row=row,
+                        stamp=stamp, engine_time=engine_time,
+                    ):
+                        continue
                 candidate = float(state["highest_high"]) - 3.0 * atr
                 state["stop"] = candidate if not seeded else max(stop, candidate)
                 state["seeded"] = True
@@ -700,29 +823,41 @@ class RegistryHtsStrategy(Strategy):
                 if not highs:
                     continue
                 if seeded and close <= stop:
-                    self._submit_sell(symbol, "chandelier14", close)
-                    continue
+                    if self._submit_virtual_stop(
+                        symbol, mode=mode, reason="chandelier14", row=row,
+                        stamp=stamp, engine_time=engine_time,
+                    ):
+                        continue
                 candidate = max(highs) - 3.0 * atr
                 state["stop"] = candidate if not seeded else max(stop, candidate)
                 state["seeded"] = True
                 continue
             if mode == "fixed-entry-atr":
                 if seeded and close <= stop:
-                    self._submit_sell(symbol, "fixed_entry_stop", close)
+                    self._submit_virtual_stop(
+                        symbol, mode=mode, reason="fixed_entry_stop", row=row,
+                        stamp=stamp, engine_time=engine_time,
+                    )
                 continue
             if mode == "virtual-trail-breakeven-2r":
                 risk = atr_k * float(state["entry_atr"])
                 if close >= float(state["entry_price"]) + 2.0 * risk:
                     state["stop"] = max(float(state["stop"]), float(state["entry_price"]))
                 if close <= float(state["stop"]):
-                    self._submit_sell(symbol, "stop_breach", close)
-                    continue
+                    if self._submit_virtual_stop(
+                        symbol, mode=mode, reason="stop_breach", row=row,
+                        stamp=stamp, engine_time=engine_time,
+                    ):
+                        continue
                 self._ratchet(state, close, atr, atr_k)
                 continue
             # ``virtual-trail-baseline`` and ``virtual-trail-plus-emergency-4atr``.
             if close <= float(state["stop"]):
-                self._submit_sell(symbol, "stop_breach", close)
-                continue
+                if self._submit_virtual_stop(
+                    symbol, mode=mode, reason="stop_breach", row=row,
+                    stamp=stamp, engine_time=engine_time,
+                ):
+                    continue
             self._ratchet(state, close, atr, atr_k)
 
     # -- allocation -----------------------------------------------------------
@@ -834,7 +969,7 @@ class RegistryHtsStrategy(Strategy):
         if hour == int(self._params["signal_hour"]) and self._schedule_due(day):
             self._selected = self._select(day)
             self._signal_day = day
-        self._update_risk(day, hour)
+        self._update_risk(day, hour, engine_time=now)
         if hour == int(self._params["rebalance_hour"]) and self._schedule_due(day):
             if self._signal_day != day:
                 # No completed signal bar this session; recompute causally from
@@ -872,15 +1007,37 @@ class RegistryHtsStrategy(Strategy):
         was_protective = protective is not None and protective is order
         self._protective.pop(symbol, None)
         reason = self._pending_sell_reason.pop(symbol, "protective_stop" if was_protective else "unknown")
+        stop_context = self._stop_exit_context.pop(symbol, None)
         self._pending_sells.discard(symbol)
         self._positions.pop(symbol, None)
         self._journal.append({"event": "fill", "side": "sell", "symbol": symbol,
                               "price": float(price), "quantity": float(quantity), "reason": reason})
-        cooldown = int(self._params["stop_cooldown_sessions"])
-        if cooldown > 0 and ("stop" in reason or was_protective):
+        if stop_context is not None:
+            event = build_virtual_stop_gap_event(
+                stop_context,
+                fill_time=pd.Timestamp(self.get_datetime()),
+                fill_price=float(price),
+                fill_quantity=float(quantity),
+                fill_session=self._current_day(),
+            )
+            self._stop_gap_events.append(event)
+            self._lifecycle_trace.append({
+                "event": "virtual_stop_filled",
+                "symbol": symbol,
+                "order_id": event["order_id"],
+                "engine_time": event["engine_time"],
+                "completed_source_bar": event["trigger_timestamp"],
+                "submission_time": event["submission_time"],
+                "fill_time": event["fill_time"],
+                "source_fill_bar": event["source_fill_bar"],
+            })
+        cooldown = int(self._params["reentry_cooldown_bars"])
+        if cooldown > 0 and (stop_context is not None or "stop" in reason or was_protective):
             index = self._session_index.get(self._current_day())
             if index is not None:
-                self._cooldowns[symbol] = index + cooldown + 1
+                # Selection looks up the previous completed session.  Therefore
+                # ``i + N`` blocks exactly N completed sessions after a stop fill.
+                self._cooldowns[symbol] = index + cooldown
 
     def _current_day(self) -> Any:
         return pd.Timestamp(self.get_datetime()).date()
@@ -1078,8 +1235,11 @@ def build_payload(
             for symbol, state in getattr(strategy, "_positions", {}).items()
         },
         "invariants": {"min_cash": min_cash, "nan_fills": nan_fills},
-        "hour_mapping_convention": "archive hours 09:00-15:00 ET relabelled to NYSE 09:30-15:30",
+        "stop_gap_event_count": len(getattr(strategy, "_stop_gap_events", ())),
+        "stop_gap_events": list(getattr(strategy, "_stop_gap_events", ())),
     }
+    if candidate.kind in {"control", "hts"}:
+        payload["hour_mapping_convention"] = HTS_HOURLY_CONVENTION
     if extra:
         payload.update(dict(extra))
     problems = validate_result(payload)

@@ -133,7 +133,7 @@ CONTROL_PARAMETER_SPECS: tuple[ParameterSpec, ...] = (
     _nullable_float("breadth_basket_threshold", "Breadth fraction required above its SMA", 0.0, 1.0),
     _str("rebalance_schedule", "Selection/rebalance cadence", REBALANCE_SCHEDULES),
     _nullable_int("rank_buffer", "Holding rank that survives a rebalance", 1, 12),
-    _int("stop_cooldown_sessions", "Complete sessions a stopped symbol is barred", 0, 20, "sessions"),
+    _int("reentry_cooldown_bars", "Completed exchange sessions a stopped symbol is barred", -1, 20, "sessions"),
     _str("exit_mode", "Exit and protective-stop behavior", EXIT_MODES),
     _nullable_int("time_exit_sessions", "Scheduled exit after entry", 1, 60),
     _int("signal_hour", "Exchange-clock hour of the completed signal bar", 0, 23, "hour"),
@@ -174,7 +174,7 @@ HTS_BASELINE: dict[str, Any] = {
     "breadth_basket_threshold": None,
     "rebalance_schedule": "daily",
     "rank_buffer": None,
-    "stop_cooldown_sessions": 0,
+    "reentry_cooldown_bars": 0,
     "exit_mode": "virtual-trail-baseline",
     "time_exit_sessions": None,
     "signal_hour": 9,
@@ -265,7 +265,7 @@ FAMILY_9_TURNOVER = RuleFamily(
     family_id="family-9-turnover",
     title="Turnover and re-entry discipline",
     hypothesis="Slower rebalancing and cooldowns may cut churn without abandoning risk exits.",
-    parameters=_params("rebalance_schedule", "rank_buffer", "stop_cooldown_sessions"),
+    parameters=_params("rebalance_schedule", "rank_buffer", "reentry_cooldown_bars"),
 )
 FAMILY_10_UNIVERSE = RuleFamily(
     family_id="family-10-universe-and-combinations",
@@ -276,7 +276,7 @@ FAMILY_10_UNIVERSE = RuleFamily(
     ),
     parameters=_params(
         "universe", "top_n", "weight_mode", "vol_target", "vol_covariance_sessions",
-        "rank_score", "correlation_screen", "market_gate", "stop_cooldown_sessions",
+        "rank_score", "correlation_screen", "market_gate", "reentry_cooldown_bars",
         "exit_mode", "leveraged_cap",
     ),
 )
@@ -553,11 +553,11 @@ _TURNOVER_SPECS: tuple[tuple[dict[str, Any], str, str], ...] = (
      "Retain an eligible holding while its rank is 3 or better, then fill spare capacity."),
     ({"rank_buffer": 4}, "Retention buffer to rank 4",
      "Retain an eligible holding while its rank is 4 or better, then fill spare capacity."),
-    ({"stop_cooldown_sessions": 1}, "One-session stop cooldown",
+    ({"reentry_cooldown_bars": 1}, "One-session stop cooldown",
      "Bar a stopped symbol from new entry for one complete subsequent exchange session."),
-    ({"stop_cooldown_sessions": 3}, "Three-session stop cooldown",
+    ({"reentry_cooldown_bars": 3}, "Three-session stop cooldown",
      "Bar a stopped symbol from new entry for three complete subsequent exchange sessions."),
-    ({"stop_cooldown_sessions": 5}, "Five-session stop cooldown",
+    ({"reentry_cooldown_bars": 5}, "Five-session stop cooldown",
      "Bar a stopped symbol from new entry for five complete subsequent exchange sessions."),
 )
 _F9 = tuple(
@@ -591,7 +591,7 @@ _UNIVERSE_AND_COMBINATIONS: tuple[tuple[dict[str, Any], str, str, tuple[str, ...
       "vol_covariance_sessions": 20, "weight_mode": "vol-target"},
      "Screened four holdings with a 20% volatility target",
      "Combine the 0.80 correlation screen with a 20-session, 20% volatility target.", ()),
-    ({"market_gate": "qqq-sma100", "stop_cooldown_sessions": 5},
+    ({"market_gate": "qqq-sma100", "reentry_cooldown_bars": 5},
      "QQQ SMA100 gate with a five-session cooldown",
      "Combine the QQQ SMA100 gate with the five-session post-stop cooldown.", ()),
     ({"exit_mode": "resting-stop-2atr", "vol_target": 0.20,

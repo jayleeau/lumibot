@@ -2,7 +2,7 @@
 
 Description: The named, resolved, fingerprinted lookup table for every registered HTS research configuration.
 
-Last Updated: 2026-09-14
+Last Updated: 2026-09-16
 
 Status: Implemented on the native engine; descriptive results in `docs/HTS_NATIVE_RESULTS.md`
 
@@ -50,107 +50,107 @@ python scripts/list_strategy_experiments.py --verify
 
 | ID | Name | Kind | Family | Priority | Status | Fingerprint |
 |---|---|---|---|---|---|---|
-| HTS_CONTROL_1 | Audited HTS control (HTS_CONTROL_1) | control | Audited HTS control | starting | registered | `2b6fd2b9ff11` |
-| H001 | Trend filter SMA 10 | hts | Trend-filter speed | standard | registered | `d7833f1576ab` |
-| H002 | Trend filter SMA 15 | hts | Trend-filter speed | standard | registered | `5fd5874f1117` |
-| H003 | Trend filter SMA 30 | hts | Trend-filter speed | standard | registered | `d8109d73979a` |
-| H004 | Trend filter SMA 40 | hts | Trend-filter speed | standard | registered | `49f1761631d6` |
-| H005 | Trend filter SMA 50 | hts | Trend-filter speed | standard | registered | `3afe1236d18a` |
-| H006 | Trend filter SMA 60 | hts | Trend-filter speed | standard | registered | `ea9678bcb038` |
-| H007 | Trend filter SMA 80 | hts | Trend-filter speed | standard | registered | `3d64372f27ee` |
-| H008 | Trend filter SMA 100 | hts | Trend-filter speed | standard | registered | `3c9c5af95c62` |
-| H009 | Trend filter SMA 150 | hts | Trend-filter speed | standard | registered | `f1fe7bedb103` |
-| H010 | Trend filter SMA 200 | hts | Trend-filter speed | standard | registered | `fef689121b7d` |
-| H011 | Momentum ranking R(5) | hts | Momentum-ranking horizon | standard | registered | `fc73c45e3751` |
-| H012 | Momentum ranking R(10) | hts | Momentum-ranking horizon | standard | registered | `0114817a7240` |
-| H013 | Momentum ranking R(15) | hts | Momentum-ranking horizon | standard | registered | `d47537e6216a` |
-| H014 | Momentum ranking R(30) | hts | Momentum-ranking horizon | standard | registered | `fa67c80211ff` |
-| H015 | Momentum ranking R(40) | hts | Momentum-ranking horizon | standard | registered | `fa90cb35b606` |
-| H016 | Momentum ranking R(60) | hts | Momentum-ranking horizon | standard | registered | `13c57cc5a7bd` |
-| H017 | Momentum ranking R(90) | hts | Momentum-ranking horizon | standard | registered | `51b461544a13` |
-| H018 | Momentum ranking R(120) | hts | Momentum-ranking horizon | standard | registered | `5000b67c5d9b` |
-| H019 | Momentum ranking R(180) | hts | Momentum-ranking horizon | standard | registered | `fec786904288` |
-| H020 | Momentum ranking R(252) | hts | Momentum-ranking horizon | standard | registered | `fb5a61316d41` |
-| H021 | ATR(7) x 1.0 stop | hts | ATR responsiveness and distance | standard | registered | `c5dccefd15ad` |
-| H022 | ATR(7) x 1.5 stop | hts | ATR responsiveness and distance | standard | registered | `42cbb2d0afbb` |
-| H023 | ATR(7) x 2.0 stop | hts | ATR responsiveness and distance | standard | registered | `80b3d1131e2e` |
-| H024 | ATR(7) x 3.0 stop | hts | ATR responsiveness and distance | standard | registered | `b6a00909eab8` |
-| H025 | ATR(7) x 4.0 stop | hts | ATR responsiveness and distance | standard | registered | `19b9341a8900` |
-| H026 | ATR(28) x 1.0 stop | hts | ATR responsiveness and distance | standard | registered | `3555c0b86a90` |
-| H027 | ATR(28) x 1.5 stop | hts | ATR responsiveness and distance | standard | registered | `6eba482ef5e1` |
-| H028 | ATR(28) x 2.0 stop | hts | ATR responsiveness and distance | standard | registered | `c3a43701a7e3` |
-| H029 | ATR(28) x 3.0 stop | hts | ATR responsiveness and distance | standard | registered | `36026559b20b` |
-| H030 | ATR(28) x 4.0 stop | hts | ATR responsiveness and distance | standard | registered | `26b27c57e780` |
-| H031 | Two-close stop confirmation | hts | Exit behavior | standard | registered | `f253ce1a58dd` |
-| H032 | Stop breach buffer 0.25 ATR | hts | Exit behavior | standard | registered | `f826b2e9f0ed` |
-| H033 | Stop breach buffer 0.50 ATR | hts | Exit behavior | standard | registered | `e9974f977e34` |
-| H034 | Chandelier trail from entry high | hts | Exit behavior | standard | registered | `e5e54d56d75d` |
-| H035 | Chandelier trail over 14 bars | hts | Exit behavior | standard | registered | `ec84655f22e1` |
-| H036 | Fixed entry ATR stop | hts | Exit behavior | standard | registered | `694b51d4abb3` |
-| H037 | Trail plus 10-session time exit | hts | Exit behavior | standard | registered | `745d43d79b84` |
-| H038 | Break-even ratchet at +2R | hts | Exit behavior | standard | registered | `2c15be00f97b` |
-| H039 | Resting broker stop 2 ATR | hts | Exit behavior | deferred | registered | `8fe53943d9e3` |
-| H040 | Trail plus emergency 4 ATR stop | hts | Exit behavior | deferred | registered | `f38db9bd1daa` |
-| H041 | Risk-adjusted R(20) | hts | Quality of the ranking signal | standard | registered | `faacdbfd7c1c` |
-| H042 | Risk-adjusted R(60) | hts | Quality of the ranking signal | standard | registered | `e54c713e53d1` |
-| H043 | Return over downside deviation | hts | Quality of the ranking signal | standard | registered | `9a8010bdc860` |
-| H044 | Multi-horizon percentile rank (10/20/60) | hts | Quality of the ranking signal | standard | registered | `deadeb5a78a2` |
-| H045 | Multi-horizon percentile rank (20/60/120) | hts | Quality of the ranking signal | standard | registered | `5b49577b89b8` |
-| H046 | Regression persistence | hts | Quality of the ranking signal | standard | registered | `e6ce124d7750` |
-| H047 | Efficiency-ratio momentum | hts | Quality of the ranking signal | standard | registered | `50a0ffebc540` |
-| H048 | Residual momentum versus QQQ | hts | Quality of the ranking signal | standard | registered | `cf69c48584b6` |
-| H049 | Momentum skipping the last five sessions | hts | Quality of the ranking signal | standard | registered | `7f0a1433066b` |
-| H050 | R(20) with a positive-return requirement | hts | Quality of the ranking signal | standard | registered | `130d30ceb569` |
-| H051 | Top-3 equal-weight holdings | hts | Concentration and allocation | standard | registered | `67c015083155` |
-| H052 | Top-4 equal-weight holdings | hts | Concentration and allocation | starting | registered | `e1e985902fc0` |
-| H053 | Top-5 equal-weight holdings | hts | Concentration and allocation | starting | registered | `c8e98cb9cd6e` |
-| H054 | Top-8 equal-weight holdings | hts | Concentration and allocation | standard | registered | `5784931fa495` |
-| H055 | Two inverse-volatility holdings, 60% cap | hts | Concentration and allocation | standard | registered | `affd527b8479` |
-| H056 | Four inverse-volatility holdings, 35% cap | hts | Concentration and allocation | standard | registered | `e890e0c6e34f` |
-| H057 | Two holdings, 0.25% NAV stop-distance budget | hts | Concentration and allocation | standard | registered | `2f03b9ba2ddf` |
-| H058 | Two holdings, 0.50% NAV stop-distance budget | hts | Concentration and allocation | standard | registered | `8ab74d200fd9` |
-| H059 | Four correlation-screened holdings | hts | Concentration and allocation | starting | registered | `8b5fadbbf090` |
-| H060 | Four holdings, one per exposure group | hts | Concentration and allocation | starting | registered | `b654c28a2f3b` |
-| H061 | Volatility target 10% over 20 sessions | hts | Portfolio volatility target | standard | registered | `de580bacc385` |
-| H062 | Volatility target 15% over 20 sessions | hts | Portfolio volatility target | standard | registered | `7c90d7a2b470` |
-| H063 | Volatility target 20% over 20 sessions | hts | Portfolio volatility target | starting | registered | `35e718de92bc` |
-| H064 | Volatility target 25% over 20 sessions | hts | Portfolio volatility target | standard | registered | `aa0b4ae0d77b` |
-| H065 | Volatility target 30% over 20 sessions | hts | Portfolio volatility target | standard | registered | `233b4bb0db18` |
-| H066 | Volatility target 10% over 60 sessions | hts | Portfolio volatility target | standard | registered | `9e1040998969` |
-| H067 | Volatility target 15% over 60 sessions | hts | Portfolio volatility target | standard | registered | `6a35bfd88b32` |
-| H068 | Volatility target 20% over 60 sessions | hts | Portfolio volatility target | starting | registered | `4a7a3ec57202` |
-| H069 | Volatility target 25% over 60 sessions | hts | Portfolio volatility target | standard | registered | `843906d124b8` |
-| H070 | Volatility target 30% over 60 sessions | hts | Portfolio volatility target | standard | registered | `6f01252089df` |
-| H071 | SPY above SMA50 | hts | Market-condition filters | standard | registered | `3b8221b2a709` |
-| H072 | SPY above SMA100 | hts | Market-condition filters | standard | registered | `24973224ab3d` |
-| H073 | SPY above SMA200 | hts | Market-condition filters | standard | registered | `db89d348baad` |
-| H074 | QQQ above SMA100 | hts | Market-condition filters | standard | registered | `85c17a01f3a7` |
-| H075 | QQQ above SMA200 | hts | Market-condition filters | standard | registered | `4d45aa5de0c5` |
-| H076 | SPY and QQQ above SMA200 | hts | Market-condition filters | standard | registered | `8a3ee951ab4c` |
-| H077 | Breadth above 50% (SMA50) | hts | Market-condition filters | standard | registered | `9f2333f80d21` |
-| H078 | Breadth above 60% (SMA50) | hts | Market-condition filters | standard | registered | `741d2bf77234` |
-| H079 | Breadth above 70% (SMA50) | hts | Market-condition filters | standard | registered | `f54893d4cd9f` |
-| H080 | SPY volatility ratio at most 1.5 | hts | Market-condition filters | standard | registered | `c942a4d9fef2` |
-| H081 | Weekly rebalance on Monday | hts | Turnover and re-entry discipline | standard | registered | `2851bec57b73` |
-| H082 | Weekly rebalance on Wednesday | hts | Turnover and re-entry discipline | standard | registered | `29823f9c9a56` |
-| H083 | Weekly rebalance on Friday | hts | Turnover and re-entry discipline | standard | registered | `7723c6cfc83d` |
-| H084 | Rebalance every second session | hts | Turnover and re-entry discipline | standard | registered | `1c04a6355db9` |
-| H085 | Rebalance every third session | hts | Turnover and re-entry discipline | standard | registered | `fb929bc806d5` |
-| H086 | Retention buffer to rank 3 | hts | Turnover and re-entry discipline | starting | registered | `51d8f27c921a` |
-| H087 | Retention buffer to rank 4 | hts | Turnover and re-entry discipline | standard | registered | `25441f6296f8` |
-| H088 | One-session stop cooldown | hts | Turnover and re-entry discipline | standard | registered | `c57e2ff903c5` |
-| H089 | Three-session stop cooldown | hts | Turnover and re-entry discipline | starting | registered | `195cd3c59926` |
-| H090 | Five-session stop cooldown | hts | Turnover and re-entry discipline | standard | registered | `1bfe9882cf45` |
-| H091 | Unleveraged ETF universe | hts | Universe and predeclared combinations | standard | registered | `be96be9a982e` |
-| H092 | Diversified core universe | hts | Universe and predeclared combinations | standard | registered | `fa4bbc0f0816` |
-| H093 | Sector-only universe | hts | Universe and predeclared combinations | standard | registered | `e6dd7d958bd7` |
-| H094 | U0 excluding crypto-linked exposure | hts | Universe and predeclared combinations | standard | registered | `274338ae0e44` |
-| H095 | Leveraged exposure capped at 25% NAV | hts | Universe and predeclared combinations | standard | registered | `ba15f4766119` |
-| H096 | Five holdings with a 20% volatility target | hts | Universe and predeclared combinations | standard | registered | `e6404472bd13` |
-| H097 | Regression rank with a 15% volatility target | hts | Universe and predeclared combinations | standard | registered | `a476ccf22f79` |
-| H098 | Screened four holdings with a 20% volatility target | hts | Universe and predeclared combinations | starting | registered | `9cc31ddf06a4` |
-| H099 | QQQ SMA100 gate with a five-session cooldown | hts | Universe and predeclared combinations | standard | registered | `33916fdd5c2b` |
-| H100 | Resting protective stops with a 20% volatility target | hts | Universe and predeclared combinations | deferred | registered | `c8075e423e0d` |
+| HTS_CONTROL_1 | Audited HTS control (HTS_CONTROL_1) | control | Audited HTS control | starting | registered | `40a366fa3530` |
+| H001 | Trend filter SMA 10 | hts | Trend-filter speed | standard | registered | `ebb421f426a2` |
+| H002 | Trend filter SMA 15 | hts | Trend-filter speed | standard | registered | `80020d1c34d4` |
+| H003 | Trend filter SMA 30 | hts | Trend-filter speed | standard | registered | `94ba0b99d3ad` |
+| H004 | Trend filter SMA 40 | hts | Trend-filter speed | standard | registered | `8ca2bf8fa295` |
+| H005 | Trend filter SMA 50 | hts | Trend-filter speed | standard | registered | `65d6e721d6bd` |
+| H006 | Trend filter SMA 60 | hts | Trend-filter speed | standard | registered | `988d36cbf9d1` |
+| H007 | Trend filter SMA 80 | hts | Trend-filter speed | standard | registered | `a42c6f79d271` |
+| H008 | Trend filter SMA 100 | hts | Trend-filter speed | standard | registered | `2309f31362e1` |
+| H009 | Trend filter SMA 150 | hts | Trend-filter speed | standard | registered | `f8cf0ef20473` |
+| H010 | Trend filter SMA 200 | hts | Trend-filter speed | standard | registered | `2d61377842ae` |
+| H011 | Momentum ranking R(5) | hts | Momentum-ranking horizon | standard | registered | `4b63b3c10453` |
+| H012 | Momentum ranking R(10) | hts | Momentum-ranking horizon | standard | registered | `bf34b4b35e27` |
+| H013 | Momentum ranking R(15) | hts | Momentum-ranking horizon | standard | registered | `682321545f10` |
+| H014 | Momentum ranking R(30) | hts | Momentum-ranking horizon | standard | registered | `d8aee1c7dc6f` |
+| H015 | Momentum ranking R(40) | hts | Momentum-ranking horizon | standard | registered | `5426db439b51` |
+| H016 | Momentum ranking R(60) | hts | Momentum-ranking horizon | standard | registered | `86e512e08d3f` |
+| H017 | Momentum ranking R(90) | hts | Momentum-ranking horizon | standard | registered | `4bebd47b7fbb` |
+| H018 | Momentum ranking R(120) | hts | Momentum-ranking horizon | standard | registered | `6aadef0aac04` |
+| H019 | Momentum ranking R(180) | hts | Momentum-ranking horizon | standard | registered | `0e5f5a2aa975` |
+| H020 | Momentum ranking R(252) | hts | Momentum-ranking horizon | standard | registered | `ad957ff6a587` |
+| H021 | ATR(7) x 1.0 stop | hts | ATR responsiveness and distance | standard | registered | `a9358d2f9196` |
+| H022 | ATR(7) x 1.5 stop | hts | ATR responsiveness and distance | standard | registered | `3ac49438f09b` |
+| H023 | ATR(7) x 2.0 stop | hts | ATR responsiveness and distance | standard | registered | `aeac0968ace3` |
+| H024 | ATR(7) x 3.0 stop | hts | ATR responsiveness and distance | standard | registered | `90b506757e95` |
+| H025 | ATR(7) x 4.0 stop | hts | ATR responsiveness and distance | standard | registered | `29b46337b695` |
+| H026 | ATR(28) x 1.0 stop | hts | ATR responsiveness and distance | standard | registered | `9e285517b6e4` |
+| H027 | ATR(28) x 1.5 stop | hts | ATR responsiveness and distance | standard | registered | `e0ef3d52c0c2` |
+| H028 | ATR(28) x 2.0 stop | hts | ATR responsiveness and distance | standard | registered | `34ba36afdbcf` |
+| H029 | ATR(28) x 3.0 stop | hts | ATR responsiveness and distance | standard | registered | `87a64ea86c75` |
+| H030 | ATR(28) x 4.0 stop | hts | ATR responsiveness and distance | standard | registered | `b63bcecd5011` |
+| H031 | Two-close stop confirmation | hts | Exit behavior | standard | registered | `72b9037df7e6` |
+| H032 | Stop breach buffer 0.25 ATR | hts | Exit behavior | standard | registered | `d8ffa15e496e` |
+| H033 | Stop breach buffer 0.50 ATR | hts | Exit behavior | standard | registered | `92669f2c0946` |
+| H034 | Chandelier trail from entry high | hts | Exit behavior | standard | registered | `bf85fe15e9b1` |
+| H035 | Chandelier trail over 14 bars | hts | Exit behavior | standard | registered | `4503b0322915` |
+| H036 | Fixed entry ATR stop | hts | Exit behavior | standard | registered | `012fa7eb1bf1` |
+| H037 | Trail plus 10-session time exit | hts | Exit behavior | standard | registered | `5c1fe7d6fcfe` |
+| H038 | Break-even ratchet at +2R | hts | Exit behavior | standard | registered | `f22038b45fb2` |
+| H039 | Resting broker stop 2 ATR | hts | Exit behavior | deferred | registered | `d4038ae6de5a` |
+| H040 | Trail plus emergency 4 ATR stop | hts | Exit behavior | deferred | registered | `85e1ccb24771` |
+| H041 | Risk-adjusted R(20) | hts | Quality of the ranking signal | standard | registered | `23caf73a6d04` |
+| H042 | Risk-adjusted R(60) | hts | Quality of the ranking signal | standard | registered | `3fdf315a9c83` |
+| H043 | Return over downside deviation | hts | Quality of the ranking signal | standard | registered | `06e5e21719e5` |
+| H044 | Multi-horizon percentile rank (10/20/60) | hts | Quality of the ranking signal | standard | registered | `e84ab224c4de` |
+| H045 | Multi-horizon percentile rank (20/60/120) | hts | Quality of the ranking signal | standard | registered | `70ee579fa2fb` |
+| H046 | Regression persistence | hts | Quality of the ranking signal | standard | registered | `8ed97af1d0a9` |
+| H047 | Efficiency-ratio momentum | hts | Quality of the ranking signal | standard | registered | `47704a30b11c` |
+| H048 | Residual momentum versus QQQ | hts | Quality of the ranking signal | standard | registered | `4ad551fd9340` |
+| H049 | Momentum skipping the last five sessions | hts | Quality of the ranking signal | standard | registered | `c806cdea3295` |
+| H050 | R(20) with a positive-return requirement | hts | Quality of the ranking signal | standard | registered | `2f9e634a2994` |
+| H051 | Top-3 equal-weight holdings | hts | Concentration and allocation | standard | registered | `45aee96954c9` |
+| H052 | Top-4 equal-weight holdings | hts | Concentration and allocation | starting | registered | `04c753378c7c` |
+| H053 | Top-5 equal-weight holdings | hts | Concentration and allocation | starting | registered | `6fff67e2ea9f` |
+| H054 | Top-8 equal-weight holdings | hts | Concentration and allocation | standard | registered | `822fe6312797` |
+| H055 | Two inverse-volatility holdings, 60% cap | hts | Concentration and allocation | standard | registered | `c2f06ccc7194` |
+| H056 | Four inverse-volatility holdings, 35% cap | hts | Concentration and allocation | standard | registered | `6832cef9c0a6` |
+| H057 | Two holdings, 0.25% NAV stop-distance budget | hts | Concentration and allocation | standard | registered | `a17dad37c00e` |
+| H058 | Two holdings, 0.50% NAV stop-distance budget | hts | Concentration and allocation | standard | registered | `10f397b9844b` |
+| H059 | Four correlation-screened holdings | hts | Concentration and allocation | starting | registered | `fbdd57d21f3f` |
+| H060 | Four holdings, one per exposure group | hts | Concentration and allocation | starting | registered | `53f5ff66d587` |
+| H061 | Volatility target 10% over 20 sessions | hts | Portfolio volatility target | standard | registered | `6942d20eb3cd` |
+| H062 | Volatility target 15% over 20 sessions | hts | Portfolio volatility target | standard | registered | `355164ad5ba6` |
+| H063 | Volatility target 20% over 20 sessions | hts | Portfolio volatility target | starting | registered | `f56951f190e5` |
+| H064 | Volatility target 25% over 20 sessions | hts | Portfolio volatility target | standard | registered | `34861428b210` |
+| H065 | Volatility target 30% over 20 sessions | hts | Portfolio volatility target | standard | registered | `b3620f72be8c` |
+| H066 | Volatility target 10% over 60 sessions | hts | Portfolio volatility target | standard | registered | `318ab31a5628` |
+| H067 | Volatility target 15% over 60 sessions | hts | Portfolio volatility target | standard | registered | `7a6b59088345` |
+| H068 | Volatility target 20% over 60 sessions | hts | Portfolio volatility target | starting | registered | `d97c1cf09b32` |
+| H069 | Volatility target 25% over 60 sessions | hts | Portfolio volatility target | standard | registered | `d479ce85eab3` |
+| H070 | Volatility target 30% over 60 sessions | hts | Portfolio volatility target | standard | registered | `136fdc595f64` |
+| H071 | SPY above SMA50 | hts | Market-condition filters | standard | registered | `a87c719ac77d` |
+| H072 | SPY above SMA100 | hts | Market-condition filters | standard | registered | `7c2035ae4bf4` |
+| H073 | SPY above SMA200 | hts | Market-condition filters | standard | registered | `3cc7f4ec03d8` |
+| H074 | QQQ above SMA100 | hts | Market-condition filters | standard | registered | `080af913711b` |
+| H075 | QQQ above SMA200 | hts | Market-condition filters | standard | registered | `f9de520887fe` |
+| H076 | SPY and QQQ above SMA200 | hts | Market-condition filters | standard | registered | `58cf923eded3` |
+| H077 | Breadth above 50% (SMA50) | hts | Market-condition filters | standard | registered | `d84ad28ee8a3` |
+| H078 | Breadth above 60% (SMA50) | hts | Market-condition filters | standard | registered | `dfe852f89e82` |
+| H079 | Breadth above 70% (SMA50) | hts | Market-condition filters | standard | registered | `b547a72fb34a` |
+| H080 | SPY volatility ratio at most 1.5 | hts | Market-condition filters | standard | registered | `3692f0ce456a` |
+| H081 | Weekly rebalance on Monday | hts | Turnover and re-entry discipline | standard | registered | `3ca0d5ce6cf9` |
+| H082 | Weekly rebalance on Wednesday | hts | Turnover and re-entry discipline | standard | registered | `ce75cbbcb455` |
+| H083 | Weekly rebalance on Friday | hts | Turnover and re-entry discipline | standard | registered | `d79ed7d1e8ef` |
+| H084 | Rebalance every second session | hts | Turnover and re-entry discipline | standard | registered | `a5f5c6ed6bf9` |
+| H085 | Rebalance every third session | hts | Turnover and re-entry discipline | standard | registered | `55a06bbdbdbc` |
+| H086 | Retention buffer to rank 3 | hts | Turnover and re-entry discipline | starting | registered | `db6616839fac` |
+| H087 | Retention buffer to rank 4 | hts | Turnover and re-entry discipline | standard | registered | `f302d95586e5` |
+| H088 | One-session stop cooldown | hts | Turnover and re-entry discipline | standard | registered | `271d522e6d64` |
+| H089 | Three-session stop cooldown | hts | Turnover and re-entry discipline | starting | registered | `db67e4fe8274` |
+| H090 | Five-session stop cooldown | hts | Turnover and re-entry discipline | standard | registered | `4be3980e1088` |
+| H091 | Unleveraged ETF universe | hts | Universe and predeclared combinations | standard | registered | `0ff42a7d01fd` |
+| H092 | Diversified core universe | hts | Universe and predeclared combinations | standard | registered | `3bfd4796c71f` |
+| H093 | Sector-only universe | hts | Universe and predeclared combinations | standard | registered | `464a61a3febf` |
+| H094 | U0 excluding crypto-linked exposure | hts | Universe and predeclared combinations | standard | registered | `a1b4d70fb84c` |
+| H095 | Leveraged exposure capped at 25% NAV | hts | Universe and predeclared combinations | standard | registered | `355d04c04173` |
+| H096 | Five holdings with a 20% volatility target | hts | Universe and predeclared combinations | standard | registered | `e44f526666c0` |
+| H097 | Regression rank with a 15% volatility target | hts | Universe and predeclared combinations | standard | registered | `4d6ebeceabb4` |
+| H098 | Screened four holdings with a 20% volatility target | hts | Universe and predeclared combinations | starting | registered | `1bf59acfb7fa` |
+| H099 | QQQ SMA100 gate with a five-session cooldown | hts | Universe and predeclared combinations | standard | registered | `7ebe993f9499` |
+| H100 | Resting protective stops with a 20% volatility target | hts | Universe and predeclared combinations | deferred | registered | `ba4b24ee4571` |
 | A01 | Multi-horizon time-series momentum | alternative | Multi-horizon time-series momentum | starting | registered | `ca1bb7061d81` |
 | A02 | Dual-momentum rotation | alternative | Dual-momentum rotation | standard | blocked-data | `b7b003d910bc` |
 | A03 | Slow trend asset allocation | alternative | Slow trend asset allocation | starting | registered | `71604523d1d4` |
