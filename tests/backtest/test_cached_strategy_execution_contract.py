@@ -34,6 +34,61 @@ def _ohlcv(index: pd.DatetimeIndex) -> pd.DataFrame:
     )
 
 
+def test_native_hts_wrapper_preserves_exact_clock_hour_labels_and_ohlcv() -> None:
+    """The frozen HTS convention excludes off-hours and sub-hour source rows."""
+    index = pd.DatetimeIndex(
+        [
+            "2025-01-02 08:00",
+            "2025-01-02 09:00",
+            "2025-01-02 09:00:01",
+            "2025-01-02 09:30",
+            "2025-01-02 10:00",
+            "2025-01-02 10:30",
+            "2025-01-02 11:00",
+            "2025-01-02 12:00",
+            "2025-01-02 13:00",
+            "2025-01-02 14:00",
+            "2025-01-02 15:00",
+            "2025-01-02 16:00",
+            "2025-01-02 17:00",
+        ]
+    )
+    values = pd.Series(range(1, len(index) + 1), index=index, dtype="float64")
+    frame = pd.DataFrame(
+        {
+            "open": values,
+            "high": values + 10.0,
+            "low": values - 10.0,
+            "close": values + 0.5,
+            "volume": values * 100.0,
+        }
+    )
+
+    mapped = native_runner._hts_lumibot_data(frame)
+    expected_index = pd.date_range("2025-01-02 09:00", periods=7, freq="h")
+    expected = frame.loc[expected_index, ["open", "high", "low", "close", "volume"]]
+
+    # The historical 09:30 relabel was retired: values and source labels are
+    # both preserved so a label T remains available only at T+1h.
+    pd.testing.assert_frame_equal(mapped, expected)
+    assert list(mapped.index) == list(expected_index)
+    assert not (mapped.index.minute != 0).any()
+    assert not (mapped.index.second != 0).any()
+    assert not (mapped.index.microsecond != 0).any()
+    assert not (mapped.index.nanosecond != 0).any()
+    assert not mapped.index.isin(
+        pd.to_datetime(
+            [
+                "2025-01-02 08:00",
+                "2025-01-02 09:30",
+                "2025-01-02 10:30",
+                "2025-01-02 16:00",
+                "2025-01-02 17:00",
+            ]
+        )
+    ).any()
+
+
 def test_daily_research_uses_completed_signal_then_next_open() -> None:
     index = pd.bdate_range("2025-01-02", periods=8)
     frame = _ohlcv(index)

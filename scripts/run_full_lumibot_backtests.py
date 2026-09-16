@@ -136,11 +136,22 @@ def _hourly_lumibot_data(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def _hts_lumibot_data(frame: pd.DataFrame) -> pd.DataFrame:
-    """Map archived 09:00-15:00 ET bars onto NYSE hourly timestamps."""
-    source = frame[(frame.index.hour >= 9) & (frame.index.hour <= 15)].copy()
-    source.index = source.index.normalize() + pd.to_timedelta(source.index.hour - 9, unit="h")
-    source.index = source.index + pd.Timedelta(hours=9, minutes=30)
-    return source[["open", "high", "low", "close", "volume"]]
+    """Retain exact 09:00-15:00 ET clock-hour bars for native HTS data.
+
+    A bar labelled ``T`` contains ``[T, T+1h)`` and is only known at
+    ``T+1h``.  This intentionally preserves the archive values and labels;
+    it is not a regular-trading-hours cleaner.
+    """
+    index = frame.index
+    exact_clock_hour = (
+        (index.hour >= 9)
+        & (index.hour <= 15)
+        & (index.minute == 0)
+        & (index.second == 0)
+        & (index.microsecond == 0)
+        & (index.nanosecond == 0)
+    )
+    return frame.loc[exact_clock_hour, ["open", "high", "low", "close", "volume"]].copy()
 
 
 def _asset_data(frames: dict[str, pd.DataFrame], *, hourly: bool, hts: bool = False) -> list[Data]:
@@ -335,8 +346,9 @@ class NativeHtsStrategy(Strategy):
     """Hourly trend-selection and ATR trailing-stop strategy on native LumiBot."""
 
     def initialize(self) -> None:
-        # The source labels bars on the hour; _hts_lumibot_data maps those bars
-        # to the NYSE half-hour clock while preserving their OHLC values.
+        # The source labels are canonical 09:00-15:00 ET clock hours.  A label
+        # T represents a bar completed at T+1h; strategy callbacks therefore
+        # read only earlier labels when making a decision at T.
         self.set_market("NYSE")
         self.sleeptime = "1H"
         self._ctx = _HTS_CONTEXT
@@ -373,6 +385,7 @@ class NativeHtsStrategy(Strategy):
         return [symbol.removesuffix(".US") for symbol, _ret, _vol in ranked[: self._ctx.top_n]]
 
     def _hour_values(self, symbol: str, day: datetime.date, hour: int) -> tuple[float, float, float] | None:
+        """Return one labelled source bar; callers select only completed labels."""
         day_map = self._ctx.hour_map.get(symbol + ".US", {}).get(day)
         if day_map is None:
             return None
@@ -444,9 +457,9 @@ class NativeHtsStrategy(Strategy):
             if index < 0:
                 return
             completed_day = self._hour_days[index]
-            # The NYSE hourly loop may not invoke the strategy on the archive's
-            # final 15:00-labelled bar. Catch up every completed source bar that
-            # followed the last 14:30 callback before processing the new open.
+            # At the new session's 09:00 callback, the prior session's 15:00
+            # bar completed at 16:00 and had no same-day executable row. Catch
+            # up both final clock-hour bars before processing the new-session open.
             completed_hours = [14, 15]
         for symbol, state in list(self._positions.items()):
             if symbol in self._pending_sells:
@@ -479,7 +492,12 @@ class NativeHtsStrategy(Strategy):
             self._update_trailing_stops(day, hour)
 
     def before_market_closes(self) -> None:
-        """Activate the 14:00-bar trail before the final 15:00 bar is filled."""
+        """Apply the completed 14:00 trail before 15:00-bar processing.
+
+        The 15:00 close is known only at 16:00 and has no same-day executable
+        clock-hour row; any resulting market action waits for the next-session
+        09:00 open.
+        """
         now = self.get_datetime()
         if now.hour >= 15:
             self._update_trailing_stops(now.date(), 15)
@@ -604,8 +622,12 @@ def _prepare_daily(start: str, end: str) -> tuple[dict[str, pd.DataFrame], list[
 def _prepare_hts(start: str, end: str) -> tuple[HtsContext, list[Data]]:
     """Load and prepare the six-year hourly HTS input set."""
     symbols = [symbol for symbol in DEFAULT_UNIVERSE]
-    hourly = _sql_frames(HOURLY_DB, "bars_hourly", symbols, "2019-01-01", end, hourly=True)
-    ordered = [symbol for symbol in symbols if symbol in hourly]
+    hourly_raw = _sql_frames(HOURLY_DB, "bars_hourly", symbols, "2019-01-01", end, hourly=True)
+    # Features, lookup maps, and LumiBot Data must consume the identical
+    # frozen 09:00-15:00 clock-hour frame.
+    hourly = {symbol: _hts_lumibot_data(frame) for symbol, frame in hourly_raw.items()}
+    ordered = [symbol for symbol in symbols if not hourly.get(symbol, pd.DataFrame()).empty]
+    hourly = {symbol: hourly[symbol] for symbol in ordered}
     hdf = pd.concat(
         [frame.assign(symbol=symbol + ".US").reset_index(names="ts") for symbol, frame in hourly.items()],
         ignore_index=True,

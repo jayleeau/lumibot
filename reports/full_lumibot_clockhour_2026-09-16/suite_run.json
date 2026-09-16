@@ -1,0 +1,52 @@
+{
+  "start": "2020-09-08",
+  "end": "2026-09-08",
+  "only": "all",
+  "results": [
+    {
+      "strategy": "meanrev_ema_native",
+      "runtime_seconds": 2.2135409170005005,
+      "analysis": {
+        "cagr": -0.5015576082345423,
+        "volatility": 0.7939256057460186,
+        "sharpe": -0.6317438367077853,
+        "max_drawdown": {
+          "drawdown": 0.9902768387303685,
+          "date": "2026-07-29 09:30:00-04:00"
+        },
+        "romad": -0.5064822165058289,
+        "total_return": -0.9846501629181931
+      }
+    },
+    {
+      "strategy": "podhajsky_gap_native",
+      "runtime_seconds": 2.0045224590285216,
+      "analysis": {
+        "cagr": -0.379653149080452,
+        "volatility": 0.919165049780206,
+        "sharpe": -0.4130413239398474,
+        "max_drawdown": {
+          "drawdown": 0.9898333662495661,
+          "date": "2026-02-05 09:30:00-05:00"
+        },
+        "romad": -0.38355258776428264,
+        "total_return": -0.9429715773634139
+      }
+    },
+    {
+      "strategy": "hourly_trend_stop_native",
+      "runtime_seconds": 7.438477750023594,
+      "analysis": {
+        "cagr": 0.41786389813535885,
+        "volatility": 0.5892119914875116,
+        "sharpe": 0.7091910961968525,
+        "max_drawdown": {
+          "drawdown": 0.5271676400681478,
+          "date": "2024-11-04 15:00:00-05:00"
+        },
+        "romad": 0.7926584759287215,
+        "total_return": 7.120816386525409
+      }
+    }
+  ]
+}
