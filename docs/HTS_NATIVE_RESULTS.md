@@ -4,20 +4,29 @@ Description: The implementation matrix, validation evidence, and descriptive
 backtest results for all 111 registered HTS research configurations on LumiBot's
 native backtesting engine.
 
-Last Updated: 2026-09-14
+Last Updated: 2026-09-16
 
-Status: Implementation complete; 214 descriptive runs accepted; four candidates
-remain blocked on inputs that are not in the retained archives
+Status: Implementation complete; 2,140-job clock-hour rebaseline accepted; four
+candidates remain blocked on inputs that are not in the retained archives
 
 Audience: Strategy owner and strategy developers
 
 ## Overview
 
-> **Historical hourly status:** every hourly/control figure below was produced
-> with the old `09:30-15:30` relabel convention. It is historical until the
-> clock-hour rebaseline is complete; do not compare or rank it as current
-> evidence. See
+> **Current hourly basis:** all hourly/control figures below were re-run on the
+> clock-hour `09:00-15:00` ET convention (revision `hts-native-2026-09-15-clock-hour-1`)
+> in the `hts_rebaseline_2026-09-15` suite (2,140 accepted jobs, 0 errors). Earlier
+> results using the old `09:30-15:30` relabel are historical and are NOT comparable.
+> See
 > [`2026-09-15_HOURLY_CONVENTION.md`](investigations/2026-09-15_HOURLY_CONVENTION.md).
+
+> **Rebaselined leaders (daily-return Sharpe, rf=0, 3.5 bps/side):** six-year top
+> `H100` 1.095, `H027` 1.059, `A09` 1.049; two-year top `H100` 1.616, `H027` 1.601,
+> `H067` 1.584. The walk-forward selected track (pick from inner-validation only,
+> score held-out test) is **negative** under the honest clock-hour basis (stitched
+> Sharpe ≈ -0.49, total ≈ -43.5%): switching to truly causal 15:00->next-open bars
+> removed an inflation where a post-market close had been treated as executable.
+> No walk-forward-selected candidate is current deployable evidence.
 
 This document records the outcome of
 `docs/HTS_REMAINING_IMPLEMENTATION_PLAN.md`: the 71 configurations that were not

@@ -1,0 +1,32 @@
+{
+  "blocked": {},
+  "elapsed_seconds": 8.362752999993972,
+  "implementation_revision": "hts-native-2026-09-14-2",
+  "out_dir": "reports/hts_hourly_alignment_2026-09-15/before",
+  "results": [
+    {
+      "candidate_id": "HTS_CONTROL_1",
+      "final_equity": 344566.7335993077,
+      "fingerprint": "2b6fd2b9ff11d3a3b0834d44f93ab01fa770ab1b895c69d9d0ead871cff6c5c8",
+      "implementation_revision": "hts-native-2026-09-14-2",
+      "max_drawdown": 0.6617897953915901,
+      "peak_rss_mb": 1079.3,
+      "problems": [],
+      "runtime_seconds": 6.420198249979876,
+      "sharpe": 0.6573189016895791,
+      "status": "ok",
+      "total_return": 2.445667335993077,
+      "warnings": [],
+      "window": "six_year"
+    }
+  ],
+  "runnable": [
+    "HTS_CONTROL_1"
+  ],
+  "skipped_completed": 0,
+  "suite_id": "hts-hourly-before-2026-09-15",
+  "windows": [
+    "six_year"
+  ],
+  "workers": 1
+}

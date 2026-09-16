@@ -1,0 +1,1041 @@
+{
+  "bar_conventions": {
+    "daily_alternatives": "exchange-session daily bars; decisions use prior completed sessions",
+    "hourly": "clock-hour 09:00-15:00 ET; a bar labelled T contains [T,T+1h) and is only known at T+1h"
+  },
+  "candidates": {
+    "A01": {
+      "data_status": "available",
+      "family_id": "A01",
+      "fingerprint": "ca1bb7061d81f18b1fb5cd23dd8feb80d57f7643f25aceb7d4f6cd90bb047c79",
+      "implementation_status": "implemented",
+      "kind": "alternative",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "A02": {
+      "data_status": "blocked-data",
+      "family_id": "A02",
+      "fingerprint": "b7b003d910bceba92fa4ffe6c38a34392ccd8e98c10d22131b42001afefb8aa2",
+      "implementation_status": "not-implemented",
+      "kind": "alternative",
+      "reasons": [
+        "requires verified BIL total-return distributions; the retained archive has no distributions table"
+      ],
+      "status": "blocked-data"
+    },
+    "A03": {
+      "data_status": "available",
+      "family_id": "A03",
+      "fingerprint": "71604523d1d4ae200ce7f98c630a1a920a1e1a2b8a3dbfbc0cdf3cd6296c5e9a",
+      "implementation_status": "implemented",
+      "kind": "alternative",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "A04": {
+      "data_status": "available",
+      "family_id": "A04",
+      "fingerprint": "4019c601fc3dee4365642e5f5f447a5db7164d04823264b3da5b5c446f52130f",
+      "implementation_status": "implemented",
+      "kind": "alternative",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "A05": {
+      "data_status": "available",
+      "family_id": "A05",
+      "fingerprint": "593b1d863dd1cc496d67c3136d9b526030258209b0f5bf83f78e81799b60bbe4",
+      "implementation_status": "implemented",
+      "kind": "alternative",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "A06": {
+      "data_status": "available",
+      "family_id": "A06",
+      "fingerprint": "e37d6e651604109ea4b897b89378d765817b63b0c52830020f8d7de8fc3a901c",
+      "implementation_status": "implemented",
+      "kind": "alternative",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "A07": {
+      "data_status": "blocked-data",
+      "family_id": "A07",
+      "fingerprint": "eb36568176cae886db7574b3a191b24c4894ede0ed2358f01e5b4eca104d82ea",
+      "implementation_status": "not-implemented",
+      "kind": "alternative",
+      "reasons": [
+        "requires validated regular-session open bars and a session-integrity audit"
+      ],
+      "status": "blocked-data"
+    },
+    "A08": {
+      "data_status": "blocked-data",
+      "family_id": "A08",
+      "fingerprint": "0d54e9f73439dfddd302cd8be97dc3af2d8b9ed4cee1de09c62f951ee15fffd4",
+      "implementation_status": "not-implemented",
+      "kind": "alternative",
+      "reasons": [
+        "requires borrow availability/rates and a two-leg short execution contract"
+      ],
+      "status": "blocked-data"
+    },
+    "A09": {
+      "data_status": "available",
+      "family_id": "A09",
+      "fingerprint": "639b4a8376fec49cfc5d36893dd991192b60ee965997fdac2e3c5281a9b4cbf2",
+      "implementation_status": "implemented",
+      "kind": "alternative",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "A10": {
+      "data_status": "blocked-data",
+      "family_id": "A10",
+      "fingerprint": "8f9ca75f53791042e85cb118c63779ec0be42c47b5515723277b8d52da9ae6df",
+      "implementation_status": "not-implemented",
+      "kind": "alternative",
+      "reasons": [
+        "requires one-minute bars and an exchange calendar; no minute archive is retained"
+      ],
+      "status": "blocked-data"
+    },
+    "H001": {
+      "data_status": "available",
+      "family_id": "family-1-trend-speed",
+      "fingerprint": "ebb421f426a2d12361cfd4a4fbfc251253faa7df432585179e24f8f692a22915",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H002": {
+      "data_status": "available",
+      "family_id": "family-1-trend-speed",
+      "fingerprint": "80020d1c34d4a48b563bdd3261e540e77ebc42a91c03211b11d743c0819a73d2",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H003": {
+      "data_status": "available",
+      "family_id": "family-1-trend-speed",
+      "fingerprint": "94ba0b99d3ad66b60ad00900850d985c814b6f64e570bc8d4350b5322c58ca9b",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H004": {
+      "data_status": "available",
+      "family_id": "family-1-trend-speed",
+      "fingerprint": "8ca2bf8fa2950697c9665f83c1488abb363a5a2da8df157f160489a496673a71",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H005": {
+      "data_status": "available",
+      "family_id": "family-1-trend-speed",
+      "fingerprint": "65d6e721d6bde0491e27c51466423f929a896acb9666fd4a73acbe05e3c2180d",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H006": {
+      "data_status": "available",
+      "family_id": "family-1-trend-speed",
+      "fingerprint": "988d36cbf9d1afaad1988bdf08f4382a43e3b151853692b3e28ecdf190a1b0d5",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H007": {
+      "data_status": "available",
+      "family_id": "family-1-trend-speed",
+      "fingerprint": "a42c6f79d27158c89ff96d35b0ccf83e74d17c9857a15b5820ea19e348ed37ce",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H008": {
+      "data_status": "available",
+      "family_id": "family-1-trend-speed",
+      "fingerprint": "2309f31362e1759488210a08532e6e3df2ca2bc976327a767ec14e67da80e9e5",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H009": {
+      "data_status": "available",
+      "family_id": "family-1-trend-speed",
+      "fingerprint": "f8cf0ef20473e793bce6157b001a692ee59c0618087ac645d891de35329d2a30",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H010": {
+      "data_status": "available",
+      "family_id": "family-1-trend-speed",
+      "fingerprint": "2d61377842ae98ff0a9b44f263c3d5fde20b5a45dab35e3b45100e555f0c1734",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H011": {
+      "data_status": "available",
+      "family_id": "family-2-rank-horizon",
+      "fingerprint": "4b63b3c104538579b33b11fa1d47837f031d94a230d8afc08227cba337af0148",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H012": {
+      "data_status": "available",
+      "family_id": "family-2-rank-horizon",
+      "fingerprint": "bf34b4b35e27ec87c0f6c4adb06304c13cb0d108661de0ea40567783353356fc",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H013": {
+      "data_status": "available",
+      "family_id": "family-2-rank-horizon",
+      "fingerprint": "682321545f109ffa4e5d5fb15c72c730710f5c75183c97a657858d5ede18bc17",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H014": {
+      "data_status": "available",
+      "family_id": "family-2-rank-horizon",
+      "fingerprint": "d8aee1c7dc6fe09660813e9c742bfc86aa807a0fb25784a7727c2662ebd04e3c",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H015": {
+      "data_status": "available",
+      "family_id": "family-2-rank-horizon",
+      "fingerprint": "5426db439b514996b9e4f093c6a0c1921000ba1230491160675a55a5602025a2",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H016": {
+      "data_status": "available",
+      "family_id": "family-2-rank-horizon",
+      "fingerprint": "86e512e08d3f8d546e3dc4377e2a000f2b653be0af7263d00e897163ea40d19e",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H017": {
+      "data_status": "available",
+      "family_id": "family-2-rank-horizon",
+      "fingerprint": "4bebd47b7fbb5edabf93b3e2a70f323899513497b9d8d1947c49b631e69fc9f4",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H018": {
+      "data_status": "available",
+      "family_id": "family-2-rank-horizon",
+      "fingerprint": "6aadef0aac04556945d59fd9d3d26e0e220a31d2c6a55fcb767a01e9d9aaaa16",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H019": {
+      "data_status": "available",
+      "family_id": "family-2-rank-horizon",
+      "fingerprint": "0e5f5a2aa9753bc22b4f3e9e3dac9ab9f2a39e64471f01abcfc6c17895b51511",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H020": {
+      "data_status": "available",
+      "family_id": "family-2-rank-horizon",
+      "fingerprint": "ad957ff6a58723703b55031a982e71e602e4a2379945d85be55116c97c71c989",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H021": {
+      "data_status": "available",
+      "family_id": "family-3-atr",
+      "fingerprint": "a9358d2f9196dbe19d84a74d519697943e414da800e5367493091319a63f93fb",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H022": {
+      "data_status": "available",
+      "family_id": "family-3-atr",
+      "fingerprint": "3ac49438f09b81189e0b1f2667eb1255d9fe97dbb45f546e2e4a54a7aff1823b",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H023": {
+      "data_status": "available",
+      "family_id": "family-3-atr",
+      "fingerprint": "aeac0968ace319b8c389583fb5b65113e7bcf07ea2f2dbcda085c6a98e3c496f",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H024": {
+      "data_status": "available",
+      "family_id": "family-3-atr",
+      "fingerprint": "90b506757e956efb8b03cd594510a489b277ed923406ba726e031d956830493a",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H025": {
+      "data_status": "available",
+      "family_id": "family-3-atr",
+      "fingerprint": "29b46337b695cb52f9b220a9bb6b4722dd7cb048e2d233dab3b04994655c5f18",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H026": {
+      "data_status": "available",
+      "family_id": "family-3-atr",
+      "fingerprint": "9e285517b6e437d131d249a2b5512f6de5d625a0567f830e74556f810d93aa86",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H027": {
+      "data_status": "available",
+      "family_id": "family-3-atr",
+      "fingerprint": "e0ef3d52c0c259defaf1e28d1a2705362162cf0c6414042d75a6480fb2d4cf57",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H028": {
+      "data_status": "available",
+      "family_id": "family-3-atr",
+      "fingerprint": "34ba36afdbcf84aae68b49337c3bf34102276cd8593ab5b84cd3f4eb037fbbda",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H029": {
+      "data_status": "available",
+      "family_id": "family-3-atr",
+      "fingerprint": "87a64ea86c75066cf88983a80c90a3cfd714a3c8d8ef3b0b6545b40e36bb0e60",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H030": {
+      "data_status": "available",
+      "family_id": "family-3-atr",
+      "fingerprint": "b63bcecd5011f90abd3be67b80043c952ab800ad4354d66325fc1b4b86d692a4",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H031": {
+      "data_status": "available",
+      "family_id": "family-4-exit",
+      "fingerprint": "72b9037df7e6c202854742fb869346c83718fe2289d796da98b4412edef1645b",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H032": {
+      "data_status": "available",
+      "family_id": "family-4-exit",
+      "fingerprint": "d8ffa15e496e6ebcf3b805ae201e593ccb3c223223b644de76ef09aceb234034",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H033": {
+      "data_status": "available",
+      "family_id": "family-4-exit",
+      "fingerprint": "92669f2c0946eedf3e02bd0d7af888aae04aa891daae4a1e1ab7e44ca1017e3b",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H034": {
+      "data_status": "available",
+      "family_id": "family-4-exit",
+      "fingerprint": "bf85fe15e9b1cbb0ef8e42cf3df0de23d0524b1f4221f382cf22f15f059b4598",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H035": {
+      "data_status": "available",
+      "family_id": "family-4-exit",
+      "fingerprint": "4503b03229153927423155ed3d0cb7a91a6def1f03c93c3dd0d8ecc8b7a14e31",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H036": {
+      "data_status": "available",
+      "family_id": "family-4-exit",
+      "fingerprint": "012fa7eb1bf140d351626dcd89dff2e5cf391c98d0cff68983247853d80cd009",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H037": {
+      "data_status": "available",
+      "family_id": "family-4-exit",
+      "fingerprint": "5c1fe7d6fcfee24cfa78f0c7eff37e7f970bfc1f3c059d747bef4ea460687bad",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H038": {
+      "data_status": "available",
+      "family_id": "family-4-exit",
+      "fingerprint": "f22038b45fb2d7b7c4ba851bc194ece73a8402ed279f919c5b020a885fefa1bd",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H039": {
+      "data_status": "available",
+      "family_id": "family-4-exit",
+      "fingerprint": "d4038ae6de5a092d5be41d9c35186b2736a8302ba79886093e31ff3d4075b013",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H040": {
+      "data_status": "available",
+      "family_id": "family-4-exit",
+      "fingerprint": "85e1ccb24771228a2bf9b25830efaeb29dd34439f938dd5ee0dde19fec4033eb",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H041": {
+      "data_status": "available",
+      "family_id": "family-5-rank-quality",
+      "fingerprint": "23caf73a6d048ccd48f29cf1d91147c85bdc7bb3b431f87b20adf8ec5519604b",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H042": {
+      "data_status": "available",
+      "family_id": "family-5-rank-quality",
+      "fingerprint": "3fdf315a9c83726a178b9adb9dc0d6502457ca6e6b620a535071fc1bb68eb441",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H043": {
+      "data_status": "available",
+      "family_id": "family-5-rank-quality",
+      "fingerprint": "06e5e21719e5f049166e48a693330ad2bf39d27383d0b1fe3212842099f120de",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H044": {
+      "data_status": "available",
+      "family_id": "family-5-rank-quality",
+      "fingerprint": "e84ab224c4de70797515c4b9bfed9a138347780025da93cd1eeb4da0b8251e40",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H045": {
+      "data_status": "available",
+      "family_id": "family-5-rank-quality",
+      "fingerprint": "70ee579fa2fb876bdd296508ea634adb317cbe99e59d843f43b39f8d81e9a314",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H046": {
+      "data_status": "available",
+      "family_id": "family-5-rank-quality",
+      "fingerprint": "8ed97af1d0a9e0eed543ef328842fba18cf97ab511f452e592a77c3fa7e33ab4",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H047": {
+      "data_status": "available",
+      "family_id": "family-5-rank-quality",
+      "fingerprint": "47704a30b11c67f041e5e179ac74ab3f8e632c4573f62afe912b78ebd60cb432",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H048": {
+      "data_status": "available",
+      "family_id": "family-5-rank-quality",
+      "fingerprint": "4ad551fd93404a66a5c524097d67c0e3672c478f213bbf968989eddf8ea08c90",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H049": {
+      "data_status": "available",
+      "family_id": "family-5-rank-quality",
+      "fingerprint": "c806cdea3295c302272a590b603c5e1d19f6648fa7fa2bd046f9470b95967fe0",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H050": {
+      "data_status": "available",
+      "family_id": "family-5-rank-quality",
+      "fingerprint": "2f9e634a2994f8694fca1dd9e400d9562f4d638f9ff606012a74ade3fb0b399e",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H051": {
+      "data_status": "available",
+      "family_id": "family-6-concentration",
+      "fingerprint": "45aee96954c928aad3e7893a590fba0188af4e33e19c610da6697be5b0bed11e",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H052": {
+      "data_status": "available",
+      "family_id": "family-6-concentration",
+      "fingerprint": "04c753378c7ca56d946ff3f0600ea18888febce87435e14597a1ba080e0256b2",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H053": {
+      "data_status": "available",
+      "family_id": "family-6-concentration",
+      "fingerprint": "6fff67e2ea9fd7227d5785bc85ebda5dcc6b2efdb167a73f758201418b926345",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H054": {
+      "data_status": "available",
+      "family_id": "family-6-concentration",
+      "fingerprint": "822fe6312797f7344e09ba26c0c18ab55385f260a0de1394fc146ca26423a963",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H055": {
+      "data_status": "available",
+      "family_id": "family-6-concentration",
+      "fingerprint": "c2f06ccc7194f18fbeaa0f334a7986811da019ea65a8dd840ac034fafdf1d8b8",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H056": {
+      "data_status": "available",
+      "family_id": "family-6-concentration",
+      "fingerprint": "6832cef9c0a629c937d6b2d36f04f87bfba96a1f91947ae94e81f0f841febb93",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H057": {
+      "data_status": "available",
+      "family_id": "family-6-concentration",
+      "fingerprint": "a17dad37c00e49fb6fa19b1f7925e3a77d6bdafb122538d41bd92320e50fff84",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H058": {
+      "data_status": "available",
+      "family_id": "family-6-concentration",
+      "fingerprint": "10f397b9844baef115ad166c05d8987521c0c4c06014dd0c2f9c8210fa187ec7",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H059": {
+      "data_status": "available",
+      "family_id": "family-6-concentration",
+      "fingerprint": "fbdd57d21f3fed12b6dd3e3e69fdeeb8cb1b6a07ac63ad35fa385aa7cd5446ad",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H060": {
+      "data_status": "available",
+      "family_id": "family-6-concentration",
+      "fingerprint": "53f5ff66d58706d9c2b153175493cfd180de4263ddc633194475155c728c9db8",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H061": {
+      "data_status": "available",
+      "family_id": "family-7-vol-target",
+      "fingerprint": "6942d20eb3cdcdbb327f6cd25addfb8826ae86f6ea85a14b4675b24e7348b18b",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H062": {
+      "data_status": "available",
+      "family_id": "family-7-vol-target",
+      "fingerprint": "355164ad5ba6a31d307597fb7a6be02521ebdc12f96f3b318a0e676a9a969b91",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H063": {
+      "data_status": "available",
+      "family_id": "family-7-vol-target",
+      "fingerprint": "f56951f190e52f43df9bcfc8879abd258cf766e52b531c4876445f2b3836f1f9",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H064": {
+      "data_status": "available",
+      "family_id": "family-7-vol-target",
+      "fingerprint": "34861428b2105aa88d64e64e2549847025e6e05d86a149c35e1e0e36de6b6910",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H065": {
+      "data_status": "available",
+      "family_id": "family-7-vol-target",
+      "fingerprint": "b3620f72be8c1a5dab4a1b61afa34c416444d0d4440816d5b15a22afc3b9caff",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H066": {
+      "data_status": "available",
+      "family_id": "family-7-vol-target",
+      "fingerprint": "318ab31a56285ab5d969bc23707acf30fe6c8353ead8e48dff61955bb545d5c2",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H067": {
+      "data_status": "available",
+      "family_id": "family-7-vol-target",
+      "fingerprint": "7a6b590883455a5fb660f708cee519a06976d777ecca239e99b2dc38148edb50",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H068": {
+      "data_status": "available",
+      "family_id": "family-7-vol-target",
+      "fingerprint": "d97c1cf09b32d947558229b43e6a242dcf2199b96654beb4128a858487bbc50a",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H069": {
+      "data_status": "available",
+      "family_id": "family-7-vol-target",
+      "fingerprint": "d479ce85eab397c49c725c5dc60fcdaef7ad2eaff1e6950f794706f9ccb4af8d",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H070": {
+      "data_status": "available",
+      "family_id": "family-7-vol-target",
+      "fingerprint": "136fdc595f6402ba6bc68bcfac7873bfe9323376d01d3a227d696eaf7e71aca6",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H071": {
+      "data_status": "available",
+      "family_id": "family-8-market-gate",
+      "fingerprint": "a87c719ac77d95bc568037342529e6b748d423663353c16caa210951c1ec891c",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H072": {
+      "data_status": "available",
+      "family_id": "family-8-market-gate",
+      "fingerprint": "7c2035ae4bf4423d069a04a81b70329807a5d16f63aa8439506c01fdbc813b55",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H073": {
+      "data_status": "available",
+      "family_id": "family-8-market-gate",
+      "fingerprint": "3cc7f4ec03d8b5912a098b3adf5c8c96b68d743e276d2f06f4985e18d2393e9a",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H074": {
+      "data_status": "available",
+      "family_id": "family-8-market-gate",
+      "fingerprint": "080af913711ba9cecf97b141a62557d7e34f6474456324839d639b95ddefacf2",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H075": {
+      "data_status": "available",
+      "family_id": "family-8-market-gate",
+      "fingerprint": "f9de520887fec7c03764ef839146c5195dfd795f91c95220467c9ecc7fc81db1",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H076": {
+      "data_status": "available",
+      "family_id": "family-8-market-gate",
+      "fingerprint": "58cf923eded3ef801b64b9a4f04b236542bee1592865e70a592ab6c737467a2f",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H077": {
+      "data_status": "available",
+      "family_id": "family-8-market-gate",
+      "fingerprint": "d84ad28ee8a34f13a21289461850a2a4f06ed96b283b5c76f6860230b509e2ae",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H078": {
+      "data_status": "available",
+      "family_id": "family-8-market-gate",
+      "fingerprint": "dfe852f89e8200aeae7d28c6a5e9cd4b08ea3dfc791660d544bb60349b350a18",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H079": {
+      "data_status": "available",
+      "family_id": "family-8-market-gate",
+      "fingerprint": "b547a72fb34a22b72f20f631f2ea13eb0cb6d1309691227f779dfed2f7e8ad0b",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H080": {
+      "data_status": "available",
+      "family_id": "family-8-market-gate",
+      "fingerprint": "3692f0ce456afa58645d32c5c75fad657cb4d04204377f021fee42758ef33fb0",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H081": {
+      "data_status": "available",
+      "family_id": "family-9-turnover",
+      "fingerprint": "3ca0d5ce6cf9132d3f17756b1bfae766769467d07d2371ef6c700374a1ab6ac2",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H082": {
+      "data_status": "available",
+      "family_id": "family-9-turnover",
+      "fingerprint": "ce75cbbcb455e316329f64f544e831578f1957794911aa628084c2b673f30a37",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H083": {
+      "data_status": "available",
+      "family_id": "family-9-turnover",
+      "fingerprint": "d79ed7d1e8ef2deaa05aeece5dfdc9c0026eef39ee9d72b608c78bdc30080395",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H084": {
+      "data_status": "available",
+      "family_id": "family-9-turnover",
+      "fingerprint": "a5f5c6ed6bf9346c6ea44c40ccd677d2e25707e1055182f8db8bd02f8f74f3e2",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H085": {
+      "data_status": "available",
+      "family_id": "family-9-turnover",
+      "fingerprint": "55a06bbdbdbc5510b547eea00ede1906d8659a2415d5708a5cca8cc6ac1eaa8b",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H086": {
+      "data_status": "available",
+      "family_id": "family-9-turnover",
+      "fingerprint": "db6616839fac3e18d2d4630ccd2d2a905bd73ab3280a7b86977d4be1a965ff23",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H087": {
+      "data_status": "available",
+      "family_id": "family-9-turnover",
+      "fingerprint": "f302d95586e534ff23b1df95c9279565889588527eda57a002316a8f50816ebe",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H088": {
+      "data_status": "available",
+      "family_id": "family-9-turnover",
+      "fingerprint": "271d522e6d6477f0691ce0ebd3ca553a485c11225e845f421c16f30c4bca0250",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H089": {
+      "data_status": "available",
+      "family_id": "family-9-turnover",
+      "fingerprint": "db67e4fe8274ce4418dc7aaead9f9c568d0a108600b69a69c30a58d36b902ccb",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H090": {
+      "data_status": "available",
+      "family_id": "family-9-turnover",
+      "fingerprint": "4be3980e10885f95868bd681b83614f6cee91202afa357b2e480b3036a779d6b",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H091": {
+      "data_status": "available",
+      "family_id": "family-10-universe-and-combinations",
+      "fingerprint": "0ff42a7d01fd7fdc57a02252959db7f9a4ab375f6081305a37b00eabcc1cfd51",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H092": {
+      "data_status": "available",
+      "family_id": "family-10-universe-and-combinations",
+      "fingerprint": "3bfd4796c71f00a857427f4832b3a8f6421911a2909d372cc7beda89d9523a97",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H093": {
+      "data_status": "available",
+      "family_id": "family-10-universe-and-combinations",
+      "fingerprint": "464a61a3febf3091b0cf11023bbe79748b5a711b18e7174c10499b1c9170dbc0",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H094": {
+      "data_status": "available",
+      "family_id": "family-10-universe-and-combinations",
+      "fingerprint": "a1b4d70fb84cd36289cc871ab739fde8b95b54632207045fbf6c31b855c306be",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H095": {
+      "data_status": "available",
+      "family_id": "family-10-universe-and-combinations",
+      "fingerprint": "355d04c04173cd76f19a1e69c482f36ca04d6823c55d0880a978ebe649dcb96d",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H096": {
+      "data_status": "available",
+      "family_id": "family-10-universe-and-combinations",
+      "fingerprint": "e44f526666c0d80c2945d50ff08d3fb65eb70f77834500cdbd04ae09501fc025",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H097": {
+      "data_status": "available",
+      "family_id": "family-10-universe-and-combinations",
+      "fingerprint": "4d6ebeceabb4791d7dadad13c66aaa63b7c5d7e308b90707264ea2316638ce90",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H098": {
+      "data_status": "available",
+      "family_id": "family-10-universe-and-combinations",
+      "fingerprint": "1bf59acfb7fab06d241ee2823024532abec6c15952fa2be1c9b2804267113067",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H099": {
+      "data_status": "available",
+      "family_id": "family-10-universe-and-combinations",
+      "fingerprint": "7ebe993f949998c618f8178e39ec7524338c06c3cdcd5b7cf7c89959e55ade07",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "H100": {
+      "data_status": "available",
+      "family_id": "family-10-universe-and-combinations",
+      "fingerprint": "ba4b24ee4571f14b9c9d31490c70daa5ad823da78a2fb3686f5ba6318f213286",
+      "implementation_status": "implemented",
+      "kind": "hts",
+      "reasons": [],
+      "status": "runnable"
+    },
+    "HTS_CONTROL_1": {
+      "data_status": "available",
+      "family_id": "HTS_CONTROL_1",
+      "fingerprint": "40a366fa3530e03436a03a791b5ed55e8d14e6c7537e984cefd04b7130930f28",
+      "implementation_status": "implemented",
+      "kind": "control",
+      "reasons": [],
+      "status": "runnable"
+    }
+  },
+  "cost_convention": "3.5 bps per side, submitted on buy and sell fills",
+  "engine": "lumibot.strategies.Strategy.run_backtest + BacktestingBroker",
+  "generated_at": "2026-09-16T00:50:12+1000",
+  "git_commit": "a581f03d578d439ecbe45fb4a6cc0f42a8e4daeb",
+  "implementation_revision": "hts-native-2026-09-15-clock-hour-1",
+  "inputs": {
+    "daily": {
+      "path": "short/suite_monitored_xnas_itch_daily_adjusted.duckdb",
+      "sha256": "f9272ee3cc7811f0853a3c185e6c1724a78b4361b43777c0fb77cc46d3c5ac59"
+    },
+    "hourly": {
+      "path": "short/suite_v2_xnas_itch_hourly_adjusted.duckdb",
+      "sha256": "1da0c60f3573b85ae0dd22299cd147d5a8c8d9f614a0fd9d10f50e6a114a143f"
+    }
+  },
+  "python": "3.11.15",
+  "registry_hash": "2a431199bfaf5cbba668f88f82a3fe3017f7a5560b5a6a25adc7829ba7846548",
+  "suite_id": "hts-hourly-after-2026-09-15",
+  "windows": [
+    {
+      "end": "2026-09-08",
+      "label": "six_year",
+      "start": "2020-09-08",
+      "warmup_start": "2019-04-27"
+    }
+  ]
+}

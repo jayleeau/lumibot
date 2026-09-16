@@ -1,0 +1,24 @@
+{
+  "accepted": 1,
+  "failed": [],
+  "out_dir": "reports/hts_hourly_alignment_2026-09-15/before",
+  "rejected": 0,
+  "runs": 1,
+  "table": [
+    {
+      "cagr": 0.22903992915729843,
+      "candidate_id": "HTS_CONTROL_1",
+      "fees": 68791.928734025,
+      "fills": 3376,
+      "final_equity": 344566.7335993077,
+      "max_drawdown": 0.6617897953915901,
+      "ok": true,
+      "sessions": 1507,
+      "sharpe": 0.6573189016895791,
+      "total_return": 2.445667335993077,
+      "volatility": 0.5345023626978476,
+      "warnings": [],
+      "window": "six_year"
+    }
+  ]
+}
