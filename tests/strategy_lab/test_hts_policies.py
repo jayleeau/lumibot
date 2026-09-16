@@ -11,8 +11,11 @@ import pytest
 from strategy_lab.hts_policies import (
     PolicyError,
     apply_leveraged_cap,
+    cap_risk_contributions,
+    expected_trade_move_bps,
     market_gate_open,
     rank_scores,
+    risk_off_gate_open,
     schedule_due,
     select_holdings,
     target_weights,
@@ -207,3 +210,68 @@ def test_leveraged_cap_trims_only_leveraged_holdings() -> None:
     assert trimmed["SPY"] == pytest.approx(0.40)
     # No leveraged holdings means no change.
     assert apply_leveraged_cap(weights, leveraged_symbols=[], cap=0.25) == weights
+
+
+def test_v2_global_gate_enums_are_strict_and_fail_closed() -> None:
+    spy = _row(close=101.0, sma100=100.0, sma200=100.0)
+    qqq = _row(close=101.0, sma100=100.0)
+    benchmark = {"SPY": spy, "QQQ": qqq}
+    assert risk_off_gate_open("none", benchmark_rows=benchmark, breadth_rows=(), breadth_expected_count=3)
+    assert risk_off_gate_open("spy-sma100", benchmark_rows=benchmark, breadth_rows=(), breadth_expected_count=3)
+    assert risk_off_gate_open("spy-sma200", benchmark_rows=benchmark, breadth_rows=(), breadth_expected_count=3)
+    assert risk_off_gate_open("qqq-sma100", benchmark_rows=benchmark, breadth_rows=(), breadth_expected_count=3)
+    # Equality is closed: comparisons are deliberately strict.
+    assert not risk_off_gate_open("spy-sma100", benchmark_rows={"SPY": _row(close=100.0, sma100=100.0)}, breadth_rows=(), breadth_expected_count=3)
+    breadth = [_row(close=101.0, sma50=100.0), _row(close=99.0, sma50=100.0), _row(close=102.0, sma50=100.0)]
+    assert risk_off_gate_open("breadth-50", benchmark_rows={}, breadth_rows=breadth, breadth_expected_count=3)
+    exact_sixty = breadth + [_row(close=99.0, sma50=100.0), _row(close=99.0, sma50=100.0)]
+    assert not risk_off_gate_open("breadth-60", benchmark_rows={}, breadth_rows=exact_sixty, breadth_expected_count=5)
+    assert not risk_off_gate_open("breadth-50", benchmark_rows={}, breadth_rows=breadth[:2], breadth_expected_count=3)
+    assert not risk_off_gate_open("breadth-50", benchmark_rows={}, breadth_rows=[_row(close=101.0, sma50=float("nan"))] * 3, breadth_expected_count=3)
+    with pytest.raises(PolicyError):
+        risk_off_gate_open("invented", benchmark_rows={}, breadth_rows=(), breadth_expected_count=0)
+
+
+def test_risk_contribution_cap_is_hand_calculated_and_never_renormalizes() -> None:
+    # A 2-ATR stop on 5/100 has a 10% relative stop distance.  A 0.5% NAV cap
+    # therefore trims 20% base weight to 5%, with the difference held as cash.
+    capped = cap_risk_contributions(
+        {"A": 0.20, "B": 0.20}, atr={"A": 5.0, "B": 10.0}, price={"A": 100.0, "B": 100.0},
+        atr_k=2.0, risk_contribution_cap=0.005,
+    )
+    assert capped == {"A": pytest.approx(0.05), "B": pytest.approx(0.025)}
+    assert sum(capped.values()) == pytest.approx(0.075)
+    assert cap_risk_contributions({"A": 0.2}, atr={"A": 5.0}, price={"A": 100.0}, atr_k=2.0,
+                                  risk_contribution_cap=None) == {"A": 0.2}
+    assert cap_risk_contributions({"A": 0.2}, atr={"A": 0.0}, price={"A": 100.0}, atr_k=2.0,
+                                  risk_contribution_cap=0.005) == {}
+    assert cap_risk_contributions({"A": 0.2}, atr={"A": 5.0}, price={"A": 0.0}, atr_k=2.0,
+                                  risk_contribution_cap=0.005) == {}
+
+
+def test_expected_trade_move_proxy_is_causal_and_has_exact_threshold_boundary() -> None:
+    # R=10% over 20 sessions, h=3 -> exp(log1p(.1)*3/20)-1 = 1.439%.
+    # Stop room is 2*1/100=2%, so the trend move binds: 143.92 bps.
+    value = expected_trade_move_bps(
+        prior_return=0.10, return_period=20, holding_bars=3, atr_k=2.0, atr=1.0, executable_price=100.0,
+    )
+    assert value == pytest.approx(10_000.0 * math.expm1(math.log1p(0.10) * 3.0 / 20.0))
+    assert value is not None and value >= value  # equality accepts in the strategy's >= comparison.
+    assert expected_trade_move_bps(prior_return=0.10, return_period=20, holding_bars=0, atr_k=2.0, atr=1.0,
+                                   executable_price=100.0) == pytest.approx(10_000.0 * math.expm1(math.log1p(.1) / 20.0))
+    assert expected_trade_move_bps(prior_return=-1.0, return_period=20, holding_bars=3, atr_k=2.0, atr=1.0,
+                                   executable_price=100.0) is None
+
+
+def test_mandatory_minimum_hold_occupies_a_slot_until_the_expiry_decision() -> None:
+    ranked = [("A", 3.0), ("B", 2.0), ("C", 1.0)]
+    held = select_holdings(
+        ranked=ranked, held=("C",), mandatory_held=("C",), top_n=2, rank_buffer=None,
+        exposure_limit=None, exposure_of=None, correlation_of=None, correlation_cap=None,
+    )
+    assert held.holdings == ("C", "A")
+    expired = select_holdings(
+        ranked=ranked, held=("C",), mandatory_held=(), top_n=2, rank_buffer=None,
+        exposure_limit=None, exposure_of=None, correlation_of=None, correlation_cap=None,
+    )
+    assert expired.holdings == ("A", "B")

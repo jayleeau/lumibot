@@ -113,6 +113,101 @@ def reconcile_trades(trades_path: Path) -> tuple[dict[str, float], float, int, l
     return net, fees, int(len(filled)), problems
 
 
+def independent_position_pnls(trades_path: Path) -> list[float]:
+    """Rebuild closed FIFO net position PnLs without importing strategy code."""
+    if not trades_path.exists():
+        return []
+    frame = pd.read_csv(trades_path)
+    if "status" not in frame or "side" not in frame:
+        return []
+    filled = frame[frame["status"].astype(str).str.lower().eq("fill")].copy()
+    if filled.empty:
+        return []
+    if "time" in filled:
+        filled = filled.sort_values("time")
+    lots: dict[str, list[dict[str, float]]] = {}
+    pnls: list[float] = []
+    for _, row in filled.iterrows():
+        symbol = str(row.get("symbol", ""))
+        side = str(row.get("side", "")).lower()
+        quantity = float(pd.to_numeric(row.get("filled_quantity"), errors="coerce"))
+        price = float(pd.to_numeric(row.get("price"), errors="coerce"))
+        fee = float(pd.to_numeric(row.get("trade_cost"), errors="coerce"))
+        if not symbol or not math.isfinite(quantity) or not math.isfinite(price) or quantity <= 0.0:
+            continue
+        if not math.isfinite(fee):
+            fee = 0.0
+        if side == "buy":
+            lots.setdefault(symbol, []).append({"quantity": quantity, "price": price, "fee": fee})
+            continue
+        if side != "sell":
+            continue
+        remaining = quantity
+        while remaining > 1e-12 and lots.get(symbol):
+            lot = lots[symbol][0]
+            matched = min(remaining, lot["quantity"])
+            entry_fee = lot["fee"] * matched / lot["quantity"]
+            exit_fee = fee * matched / quantity
+            pnls.append(matched * (price - lot["price"]) - entry_fee - exit_fee)
+            lot["quantity"] -= matched
+            lot["fee"] -= entry_fee
+            remaining -= matched
+            if lot["quantity"] <= 1e-12:
+                lots[symbol].pop(0)
+    return pnls
+
+
+def position_pnl_breadth_metrics(pnls: list[float]) -> dict[str, float | int | None]:
+    """Return independently reproducible median and top-three PnL breadth metrics."""
+    if not pnls:
+        return {"positions": 0, "median_position_pnl": None, "top_three_pnl_share": None}
+    series = pd.Series(pnls, dtype="float64")
+    total = float(series.sum())
+    top_three = float(series.nlargest(3).sum())
+    return {
+        "positions": int(len(series)),
+        "median_position_pnl": float(series.median()),
+        "top_three_pnl_share": (top_three / total) if total > 0.0 else None,
+    }
+
+
+def _audit_v2_payload(payload: Mapping[str, Any], audit: RunAudit) -> None:
+    """Validate v2 artifact identity and diagnostics from emitted values only."""
+    required = (
+        "execution_engine", "implementation_revision", "parent_candidate_id", "resolved_parameters_hash",
+        "resolved_parameters", "override_parameters", "risk_off_transitions", "risk_contribution_events",
+        "entry_edge_events", "position_pnl_records",
+    )
+    for key in required:
+        if key not in payload:
+            audit.ok = False
+            audit.findings.append(f"v2 artifact missing {key}")
+    if payload.get("execution_engine") != "native-lumibot-backtesting":
+        audit.ok = False
+        audit.findings.append("v2 artifact did not identify the native execution engine")
+    if payload.get("v2_contract", {}).get("cost_role", "primary") == "primary" and float(payload.get("cost_bps_per_side", float("nan"))) != 3.5:
+        audit.ok = False
+        audit.findings.append("v2 primary artifact cost is not 3.5 bps per side")
+    for event in payload.get("risk_contribution_events") or []:
+        atr = event.get("atr")
+        price = event.get("executable_price")
+        post_weight = event.get("post_cap_weight")
+        relative = event.get("relative_stop_distance")
+        cap = event.get("risk_contribution_cap")
+        if atr is None or price is None or post_weight is None or relative is None or cap is None:
+            continue
+        expected_relative = float(payload["resolved_parameters"]["atr_k"]) * float(atr) / float(price)
+        if not math.isclose(float(relative), expected_relative, rel_tol=1e-12, abs_tol=1e-12):
+            audit.ok = False
+            audit.findings.append("risk-cap relative stop distance mismatch")
+        contribution = float(post_weight) * float(relative)
+        if contribution > float(cap) + 1e-12:
+            audit.ok = False
+            audit.findings.append("risk-cap contribution exceeds declared cap")
+    pnls = independent_position_pnls(audit.run_dir / "run_trades.csv")
+    audit.metrics["position_pnl_breadth"] = position_pnl_breadth_metrics(pnls)
+
+
 def stable_hash(run_dir: Path) -> str:
     """Hash the decision/fill/equity artifacts that a repeated run must reproduce."""
     digest = sha256()
@@ -178,6 +273,8 @@ def audit_run(run_dir: Path, *, rtol: float = 1e-10, atol: float = 1e-12) -> Run
         if symbol not in terminal:
             audit.findings.append(f"open position {symbol} x{quantity} not in terminal state")
             audit.ok = False
+    if payload.get("kind") == "hts-v2":
+        _audit_v2_payload(payload, audit)
     if not audit.findings:
         audit.warnings.extend(payload.get("warnings") or [])
     return audit

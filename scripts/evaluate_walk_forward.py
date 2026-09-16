@@ -1,369 +1,266 @@
-"""Retrospective walk-forward selection evaluator for the native HTS suite.
+#!/usr/bin/env python3
+"""Evaluate the locked HTS v2 six-block walk-forward selection programme.
 
-Reads the per-candidate, per-window artifacts the native runner wrote and
-implements the plan's Phase 4/5 selection procedure:
-
-* Selection uses ONLY the inner-validation windows (``{fold}_innerA`` and
-  ``{fold}_innerB``) — never the outer test window.  Default ordering:
-  ``score = median(inner Sharpe) - 0.5 * IQR(inner Sharpe)``, tie-break by
-  lower turnover, then simpler rule count, then ID.
-* The winner is FROZEN before the outer test; the reported number for a fold is
-  that pre-selected candidate's held-out ``{fold}_test`` result.
-* Every candidate is still evaluated on every outer test for transparent
-  comparison, but only the pre-selected row is the *reported* selection result
-  — picking the best outer-test row afterwards would re-introduce the bias.
-
-Also builds a stitched selection-procedure track record: chain each fold's
-pre-selected candidate's outer-test daily returns with charged turnover at the
-boundaries (from a cash start), and a per-fold isolated-diagnostics table.
-
-Usage
------
-    python scripts/evaluate_walk_forward.py --out-dir reports/hts_walkforward_2026-09-14
+This script deliberately separates ``--prepare-fold`` from ``--reveal-fold``.
+Preparation reads only the six discovery blocks, independently audits them, and
+writes an immutable selection lock. Reveal refuses to inspect the next outer
+block unless that matching lock predates its result artifact.
 """
 from __future__ import annotations
 
 import argparse
 import json
 import math
-import statistics
 import sys
-from dataclasses import dataclass, field
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 import numpy as np
+import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-FOLD_NAMES = ("f1", "f2", "f3", "f4", "f5", "f6")
+from strategy_lab.experiment_registry import get_registry  # noqa: E402
+from strategy_lab.experiment_validation import audit_run, reconcile_trades  # noqa: E402
+from strategy_lab.native_experiments import IMPLEMENTATION_REVISION, V2_FOLD_BLOCKS  # noqa: E402
+
+PRIMARY_COST_BPS = 3.5
 
 
-@dataclass
-class FoldRun:
-    candidate_id: str
-    family_id: str
-    window_label: str
-    metrics: dict[str, Any]
-    fills: int = 0
-    fees: float = 0.0
-    turnover: float = 0.0
-    runtime_seconds: float | None = None
-    ok: bool = False
-    problems: list[str] = field(default_factory=list)
-    daily_returns: list[float] = field(default_factory=list)
+def _artifact(out_dir: Path, candidate_id: str, block: str) -> Path:
+    return out_dir / candidate_id / block / "run_result.json"
 
 
-@dataclass
-class FoldResult:
-    fold: str
-    disc_end: str
-    inner_leaderboard: list[dict[str, Any]]
-    selected_id: str
-    selected_inner_sharpe: float
-    outer: dict[str, Any] | None
-    all_outer: list[dict[str, Any]]
+def _load_payload(out_dir: Path, candidate_id: str, block: str) -> dict[str, Any]:
+    path = _artifact(out_dir, candidate_id, block)
+    if not path.exists():
+        raise FileNotFoundError(path)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if payload.get("kind") != "hts-v2":
+        raise ValueError(f"{path}: expected kind hts-v2")
+    if payload.get("implementation_revision") != IMPLEMENTATION_REVISION:
+        raise ValueError(f"{path}: implementation revision mismatch")
+    audit = audit_run(path.parent)
+    if not audit.ok:
+        raise ValueError(f"{path}: independent audit failed: {audit.findings}")
+    return payload
 
 
-def _load_result(path: Path) -> dict[str, Any] | None:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return None
+def _position_pnls(payloads: Sequence[Mapping[str, Any]]) -> list[float]:
+    values: list[float] = []
+    for payload in payloads:
+        for record in payload.get("position_pnl_records") or []:
+            value = record.get("net_pnl")
+            if value is not None and math.isfinite(float(value)):
+                values.append(float(value))
+    return values
 
 
-def _load_daily_returns(stats_path: Path) -> list[float]:
-    """Daily arithmetic returns from the native runner's equity curve."""
-    import pandas as pd
-
-    if not stats_path.exists():
-        return []
-    try:
-        frame = pd.read_csv(stats_path, usecols=["datetime", "portfolio_value"])
-        stamps = pd.to_datetime(frame["datetime"], utc=True)
-        frame = frame.assign(_stamp=stamps, _session=stamps.dt.date)
-        daily = frame.sort_values("_stamp").groupby("_session", sort=True)["portfolio_value"].last()
-        series = daily.astype(float)
-        returns = series.pct_change().dropna()
-        return [float(x) for x in returns.tolist()]
-    except Exception:
-        return []
+def _pnl_breadth(payloads: Sequence[Mapping[str, Any]]) -> tuple[float, float]:
+    values = _position_pnls(payloads)
+    if not values:
+        return float("-inf"), float("inf")
+    series = pd.Series(values, dtype="float64")
+    total = float(series.sum())
+    top_three_share = float(series.nlargest(3).sum() / total) if total > 0.0 else float("inf")
+    return float(series.median()), top_three_share
 
 
-def _fold_schedule(out_dir: Path) -> dict[str, str]:
-    """Map fold -> outer-test start from the manifest's windows list."""
-    manifest_path = out_dir / "suite_manifest.json"
-    if not manifest_path.exists():
-        return {f: "" for f in FOLD_NAMES}
-    try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        windows = manifest.get("windows") or []
-        out: dict[str, str] = {}
-        for entry in windows:
-            label = str(entry.get("label", ""))
-            for fold in FOLD_NAMES:
-                if label == f"{fold}_test":
-                    out[fold] = str(entry.get("start", ""))
-        return out
-    except Exception:
-        return {f: "" for f in FOLD_NAMES}
+def _daily_returns(run_dir: Path) -> pd.Series:
+    stats = pd.read_csv(run_dir / "run_stats.csv", usecols=["datetime", "portfolio_value"])
+    stamps = pd.to_datetime(stats["datetime"], utc=True)
+    daily = (
+        stats.assign(_session=stamps.dt.strftime("%Y-%m-%d"), _stamp=stamps)
+        .sort_values("_stamp")
+        .groupby("_session", sort=True)["portfolio_value"]
+        .last()
+        .astype("float64")
+    )
+    return daily.pct_change().dropna()
 
 
-def _leader_turnover(candidate_id: str, runs: Sequence[FoldRun]) -> float:
-    """Approximate turnover proxy from fill count scaled by window length."""
-    fills = sum(r.fills for r in runs)
-    sessions = max((r.metrics.get("sessions") for r in runs if r.metrics), default=0)
-    return (fills / sessions) if sessions else float("inf")
+def _chained_metrics(out_dir: Path, candidate_id: str, blocks: Sequence[str]) -> dict[str, float]:
+    nav = 1.0
+    path: list[float] = [nav]
+    boundary_cost = 2.0 * PRIMARY_COST_BPS / 10_000.0
+    for index, block in enumerate(blocks):
+        for value in _daily_returns(_artifact(out_dir, candidate_id, block).parent):
+            nav *= 1.0 + float(value)
+            path.append(nav)
+        if index < len(blocks) - 1:
+            nav *= 1.0 - boundary_cost
+            path.append(nav)
+    values = np.asarray(path, dtype="float64")
+    returns = np.diff(values) / values[:-1]
+    sharpe = float(returns.mean() / returns.std(ddof=1) * math.sqrt(252.0)) if len(returns) > 1 and returns.std(ddof=1) else 0.0
+    max_drawdown = float(-(values / np.maximum.accumulate(values) - 1.0).min())
+    return {"total_return": float(values[-1] - 1.0), "sharpe": sharpe, "max_drawdown": max_drawdown}
 
 
-def _rule_count(candidate_id: str) -> int:
-    """Proxy for rule simplicity: length of candidate ID payload name is unavailable here;
-    return 1 for all (tie-break falls through to ID, which is deterministic)."""
-    return 1
+def _discovery_row(out_dir: Path, candidate: Any, blocks: Sequence[str]) -> dict[str, Any]:
+    payloads = [_load_payload(out_dir, candidate.candidate_id, block) for block in blocks]
+    metrics = [payload["metrics"] for payload in payloads]
+    sharpes = [float(metric["sharpe"]) for metric in metrics]
+    total_returns = [float(metric["total_return"]) for metric in metrics]
+    costs: list[float] = []
+    fills = 0
+    sessions = 0
+    for block, payload in zip(blocks, payloads):
+        _net, fees, block_fills, _problems = reconcile_trades(_artifact(out_dir, candidate.candidate_id, block).parent / "run_trades.csv")
+        costs.append(fees)
+        fills += block_fills
+        sessions += int(payload["metrics"]["sessions"])
+    median_pnl, top_three_share = _pnl_breadth(payloads)
+    chained = _chained_metrics(out_dir, candidate.candidate_id, blocks)
+    net_pnl = sum(float(payload["metrics"]["final_equity"]) - 100_000.0 for payload in payloads)
+    charged_cost = float(sum(costs))
+    gross_profit = net_pnl + charged_cost
+    positive_blocks = sum(1 for sharpe, total_return in zip(sharpes, total_returns) if sharpe > 0.0 and total_return > 0.0)
+    eligible = (
+        positive_blocks >= 4 and median_pnl > 0.0 and top_three_share <= 0.50
+        and chained["max_drawdown"] <= 0.35 and gross_profit > 0.0
+        and charged_cost <= 0.10 * gross_profit
+    )
+    return {
+        "candidate_id": candidate.candidate_id,
+        "parent_candidate_id": candidate.parent_candidate_id,
+        "blocks": list(blocks),
+        "block_sharpes": sharpes,
+        "block_total_returns": total_returns,
+        "positive_blocks": positive_blocks,
+        "worst_block_sharpe": min(sharpes),
+        "robust_sharpe": float(np.median(sharpes) - 0.5 * (np.percentile(sharpes, 75) - np.percentile(sharpes, 25))),
+        "median_position_pnl": median_pnl,
+        "top_three_pnl_share": top_three_share,
+        "chained_max_drawdown": chained["max_drawdown"],
+        "chained_total_return": chained["total_return"],
+        "charged_transaction_cost": charged_cost,
+        "gross_profit_before_cost": gross_profit,
+        "fills_per_session": float(fills / sessions) if sessions else float("inf"),
+        "eligible": eligible,
+    }
 
 
-def _select_leader(candidate_id: str, runs: Sequence[FoldRun]) -> tuple[float, dict[str, Any]]:
-    """Plan default inner ordering: median - 0.5*IQR of inner Sharpe."""
-    sharpes = [r.metrics.get("sharpe") for r in runs if r.metrics and r.metrics.get("sharpe") is not None]
-    if len(sharpes) < 2:
-        median = float(sharpes[0]) if sharpes else -math.inf
-        iqr = 0.0
-    else:
-        sorted_s = sorted(sharpes)
-        n = len(sorted_s)
-        q1 = sorted_s[n // 4] if n >= 4 else sorted_s[0]
-        q3 = sorted_s[(3 * n) // 4] if n >= 4 else sorted_s[-1]
-        median = statistics.median(sorted_s)
-        iqr = q3 - q1
-    return (median - 0.5 * iqr), {"median": median, "iqr": iqr, "sharpes": sharpes}
-
-
-def _load_registry_family() -> dict[str, str]:
-    try:
-        from strategy_lab.experiment_registry import get_registry
-
-        reg = get_registry()
-        return {c.candidate_id: c.family_id for c in reg.all_candidates()}
-    except Exception:
-        return {}
-
-
-def evaluate_fold(
-    fold: str,
-    out_dir: Path,
-    runs_by_cand: Mapping[str, Mapping[str, Mapping[str, Any]]],
-    registry_families: Mapping[str, str],
-) -> FoldResult:
-    """Run the selection procedure for a single fold.  Public + deterministic."""
-    inner_labels = (f"{fold}_innerA", f"{fold}_innerB")
-    test_label = f"{fold}_test"
-    # ---- gather inner-validation rows (selection evidence only) ----
-    inner_leaderboard: list[dict[str, Any]] = []
-    for cid in sorted(runs_by_cand):
-        runs = []
-        for wl in inner_labels:
-            payload = runs_by_cand[cid].get(wl)
-            if not payload or not payload.get("ok"):
-                continue
-            runs.append(_to_foldrun(cid, wl, payload))
-        if len(runs) < 2:
-            continue  # need both inner windows to have a score
-        score, detail = _select_leader(cid, runs)
-        turnover = _leader_turnover(cid, runs)
-        inner_leaderboard.append({
-            "candidate_id": cid,
-            "family_id": registry_families.get(cid, runs_by_cand[cid].get("_family", "")),
-            "score": score,
-            "median": detail["median"],
-            "iqr": detail["iqr"],
-            "inner_sharpes": detail["sharpes"],
-            "inner_fills": sum(r.fills for r in runs),
-            "turnover": turnover,
-        })
-    inner_leaderboard.sort(key=lambda row: (-row["score"], row["turnover"], row["candidate_id"]))
-    if not inner_leaderboard:
-        return FoldResult(fold, "", [], "", -math.inf, None, [])
-
-    selected_id = inner_leaderboard[0]["candidate_id"]
-    selected_inner_sharpe = float(inner_leaderboard[0]["score"])
-
-    # ---- frozen outer test (held out; never used for selection) ----
-    outer_payload = runs_by_cand.get(selected_id, {}).get(test_label) or {}
-    outer = None
-    if outer_payload and outer_payload.get("ok"):
-        runs = _to_foldrun(selected_id, test_label, outer_payload)
-        outer = {
-            "candidate_id": selected_id,
-            "sharpe": runs.metrics.get("sharpe"),
-            "cagr": runs.metrics.get("cagr"),
-            "total_return": runs.metrics.get("total_return"),
-            "max_drawdown": runs.metrics.get("max_drawdown"),
-            "volatility": runs.metrics.get("volatility"),
-            "fills": runs.fills,
-            "fees": runs.fees,
-            "runtime_seconds": runs.runtime_seconds,
-            "problems": runs.problems,
-        }
-    # ---- all candidates on the outer test, transparent comparison ----
-    all_outer: list[dict[str, Any]] = []
-    for cid in sorted(runs_by_cand):
-        p = runs_by_cand[cid].get(test_label)
-        if not p or not p.get("ok"):
-            continue
-        fr = _to_foldrun(cid, test_label, p)
-        all_outer.append({
-            "candidate_id": cid,
-            "family_id": registry_families.get(cid, ""),
-            "sharpe": fr.metrics.get("sharpe"),
-            "cagr": fr.metrics.get("cagr"),
-            "total_return": fr.metrics.get("total_return"),
-            "max_drawdown": fr.metrics.get("max_drawdown"),
-            "fills": fr.fills,
-        })
-    all_outer.sort(key=lambda row: -float(row["sharpe"] or -math.inf))
-    return FoldResult(fold, "", inner_leaderboard, selected_id, selected_inner_sharpe, outer, all_outer)
-
-
-def _to_foldrun(cid: str, window_label: str, payload: Mapping[str, Any]) -> FoldRun:
-    metrics = dict(payload.get("metrics") or {})
-    # trades file for fills/cost
-    run_dir = Path(payload.get("_dir", ""))
-    return FoldRun(
-        candidate_id=cid,
-        family_id=str(payload.get("family_id", "")),
-        window_label=window_label,
-        metrics=metrics,
-        fills=int(payload.get("fills") or 0),
-        fees=float(payload.get("fees") or 0.0),
-        runtime_seconds=payload.get("runtime_seconds"),
-        ok=bool(payload.get("ok")),
-        problems=list(payload.get("problems") or []),
-        daily_returns=_load_daily_returns(run_dir / "run_stats.csv") if run_dir.exists() else [],
+def _selection_key(row: Mapping[str, Any]) -> tuple[float, float, float, float, float, float, str]:
+    """Fixed lexicographic selection rule from the v2 plan."""
+    return (
+        -float(row["positive_blocks"]), -float(row["worst_block_sharpe"]), -float(row["robust_sharpe"]),
+        float(row["top_three_pnl_share"]), float(row["chained_max_drawdown"]),
+        float(row["fills_per_session"]), str(row["candidate_id"]),
     )
 
 
-def load_suite(out_dir: Path) -> dict[str, dict[str, dict[str, Any]]]:
-    """Load every candidate's run_result.json keyed by (candidate_id, window_label)."""
-    out: dict[str, dict[str, dict[str, Any]]] = {}
-    for run_dir in sorted(out_dir.iterdir()):
-        if not run_dir.is_dir():
-            continue
-        cid = run_dir.name
-        for window_dir in sorted(run_dir.iterdir()):
-            if not window_dir.is_dir():
-                continue
-            result_path = window_dir / "run_result.json"
-            if not result_path.exists():
-                continue
-            payload = _load_result(result_path)
-            if payload is None:
-                continue
-            payload["_dir"] = str(window_dir)
-            payload["ok"] = (payload.get("problems") == [])
-            out.setdefault(cid, {})[window_dir.name] = payload
-    return out
+def _registry_hash() -> str:
+    registry = get_registry()
+    return sha256(json.dumps({c.candidate_id: c.fingerprint() for c in registry.all_candidates()}, sort_keys=True).encode()).hexdigest()
 
 
-def stitch_selected(curves: Mapping[str, list[float]], order: list[str], cost_bps_per_side: float) -> dict[str, Any]:
-    """Chain each fold's pre-selected daily returns through fold boundaries.
-
-    Charges a full liquidation+re-entry turnover (two sides at cost) at each
-    boundary as a standing position in equities is unwound and redeployed.
-    Each fold is an independent from-cash run, so this is a conservative
-    approximation of continuous carry — labelled as such in the report, not a
-    claim of gapless live continuity.
-    """
-    nav = 1.0
-    daily_nav: list[float] = []
-    boundary_cost_each = cost_bps_per_side / 10_000.0
-    for idx, key in enumerate(order):
-        returns = curves.get(key, [])
-        for r in returns:
-            nav *= (1.0 + r)
-            daily_nav.append(nav)
-        if idx < len(order) - 1 and returns:
-            nav *= (1.0 - 2.0 * boundary_cost_each)
-            daily_nav[-1] = nav
-    if len(daily_nav) < 2:
-        return {"sessions": len(daily_nav), "total_return": float("nan"), "sharpe": float("nan"),
-                "max_drawdown": float("nan")}
-    arr = np.asarray(daily_nav, dtype=float)
-    rets = np.diff(arr) / arr[:-1]
-    sharpe = float(rets.mean() / rets.std(ddof=1) * math.sqrt(252.0)) if rets.std(ddof=1) else 0.0
-    cagr_years = max((len(arr)) / 252.0, 1e-9)
-    cagr = float((arr[-1] / arr[0]) ** (1.0 / cagr_years) - 1.0) if arr[0] > 0 else float("nan")
-    dd = float(-(arr / np.maximum.accumulate(arr) - 1.0).min())
-    return {
-        "sessions": int(len(arr)),
-        "total_return": float(arr[-1] - 1.0),
-        "cagr": cagr,
-        "sharpe": sharpe,
-        "max_drawdown": dd,
-        "cost_bps_per_side": cost_bps_per_side,
+def prepare_fold(out_dir: Path, fold: str) -> Path:
+    """Audit discovery blocks and write the immutable lock before outer reveal."""
+    if fold not in V2_FOLD_BLOCKS:
+        raise KeyError(fold)
+    blocks, outer = V2_FOLD_BLOCKS[fold]
+    registry = get_registry()
+    rows = [_discovery_row(out_dir, candidate, blocks) for candidate in registry.hts_v2_variations]
+    eligible = [row for row in rows if row["eligible"]]
+    parent_champions = [
+        min((row for row in eligible if row["parent_candidate_id"] == parent), key=_selection_key)
+        for parent in sorted({row["parent_candidate_id"] for row in eligible})
+    ]
+    selected = min(parent_champions, key=_selection_key) if parent_champions else None
+    manifest = json.loads((out_dir / "suite_manifest.json").read_text(encoding="utf-8"))
+    lock = {
+        "fold": fold, "discovery_blocks": list(blocks), "outer_block": outer,
+        "registry_hash": _registry_hash(), "implementation_revision": IMPLEMENTATION_REVISION,
+        "input_hashes": manifest.get("inputs"), "eligible_set": [row["candidate_id"] for row in eligible],
+        "ranking_values": rows, "parent_champions": parent_champions,
+        "selected_id": selected["candidate_id"] if selected else None,
+        "selection_rule": "parent champion then fixed lexicographic robust rule",
     }
+    lock["lock_hash"] = sha256(json.dumps(lock, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+    path = out_dir / fold / "selection_lock.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        existing = json.loads(path.read_text(encoding="utf-8"))
+        if existing.get("lock_hash") != lock["lock_hash"]:
+            raise ValueError(f"{path}: existing lock disagrees with current audited discovery data")
+        return path
+    path.write_text(json.dumps(lock, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8")
+    return path
+
+
+def reveal_fold(out_dir: Path, fold: str) -> dict[str, Any]:
+    """Verify one lock and reveal only its frozen held-out candidate result."""
+    if fold not in V2_FOLD_BLOCKS:
+        raise KeyError(fold)
+    _blocks, outer = V2_FOLD_BLOCKS[fold]
+    lock_path = out_dir / fold / "selection_lock.json"
+    if not lock_path.exists():
+        raise FileNotFoundError(f"{lock_path}: prepare the fold before revealing its outer block")
+    lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    if lock.get("registry_hash") != _registry_hash() or lock.get("implementation_revision") != IMPLEMENTATION_REVISION:
+        raise ValueError(f"{lock_path}: registry or implementation revision mismatch")
+    selected_id = lock.get("selected_id")
+    if selected_id is None:
+        return {"fold": fold, "selected_id": None, "outer_block": outer, "cash": True}
+    outer_path = _artifact(out_dir, selected_id, outer)
+    if not outer_path.exists():
+        raise FileNotFoundError(outer_path)
+    if lock_path.stat().st_mtime >= outer_path.stat().st_mtime:
+        raise ValueError(f"{outer_path}: outer artifact predates selection lock; do not reveal retrospectively")
+    payload = _load_payload(out_dir, selected_id, outer)
+    return {
+        "fold": fold, "selected_id": selected_id, "parent_candidate_id": payload.get("parent_candidate_id"),
+        "outer_block": outer, "metrics": payload["metrics"],
+        "position_pnl_records": payload.get("position_pnl_records") or [],
+    }
+
+
+def _write_report(out_dir: Path, revealed: Sequence[Mapping[str, Any]]) -> Path:
+    selected = [row for row in revealed if row.get("selected_id")]
+    outer_payloads = [_load_payload(out_dir, str(row["selected_id"]), str(row["outer_block"])) for row in selected]
+    pnls = _position_pnls(outer_payloads)
+    median, top_share = _pnl_breadth(outer_payloads)
+    report = {
+        "procedure": "v2 six-block discovery, parent champions, locked sequential outer reveal",
+        "selection_per_fold": list(revealed),
+        "outer_positive_fold_count": sum(1 for row in selected if float(row["metrics"]["total_return"]) > 0.0),
+        "outer_position_breadth": {"median_position_pnl": median, "top_three_pnl_share": top_share, "positions": len(pnls)},
+        "qualification_note": "Retrospective discovery evidence only; no qualification or live-edge claim.",
+    }
+    path = out_dir / "walk_forward_report.json"
+    path.write_text(json.dumps(report, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8")
+    return path
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Walk-forward selection evaluator (native HTS)")
-    parser.add_argument("--out-dir", default=str(ROOT / "reports" / "hts_walkforward_2026-09-14"))
-    parser.add_argument("--cost-bps-per-side", type=float, default=3.5)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--out-dir", default=str(ROOT / "reports" / "hts_v2_walkforward"))
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--prepare-fold", choices=tuple(V2_FOLD_BLOCKS))
+    group.add_argument("--reveal-fold", choices=tuple(V2_FOLD_BLOCKS))
+    group.add_argument("--all-folds", action="store_true")
     args = parser.parse_args(argv)
-
     out_dir = Path(args.out_dir)
-    if not out_dir.exists():
-        print(f"no suite at {out_dir}", file=sys.stderr)
+    try:
+        if args.prepare_fold:
+            print(prepare_fold(out_dir, args.prepare_fold))
+            return 0
+        if args.reveal_fold:
+            print(json.dumps(reveal_fold(out_dir, args.reveal_fold), indent=2, sort_keys=True, default=str))
+            return 0
+        revealed: list[dict[str, Any]] = []
+        for fold in V2_FOLD_BLOCKS:
+            prepare_fold(out_dir, fold)
+            revealed.append(reveal_fold(out_dir, fold))
+        print(_write_report(out_dir, revealed))
+        return 0
+    except (FileNotFoundError, KeyError, ValueError) as error:
+        print(f"walk-forward evaluation refused: {error}", file=sys.stderr)
         return 2
-
-    suite = load_suite(out_dir)
-    families = _load_registry_family()
-    folds_results: list[FoldResult] = []
-    for fold in FOLD_NAMES:
-        folds_results.append(evaluate_fold(fold, out_dir, suite, families))
-    schedule = _fold_schedule(out_dir)
-
-    # ---- stitched selected track record ----
-    order: list[str] = []
-    curves: dict[str, list[float]] = {}
-    sel_rows: list[dict[str, Any]] = []
-    for fr in folds_results:
-        order.append(fr.fold)
-        if fr.selected_id:
-            runs = suite.get(fr.selected_id, {})
-            stats_dir = runs.get(fr.fold + "_test", {}).get("_dir", "")
-            if stats_dir:
-                from pathlib import Path as P
-                curves[fr.fold] = _load_daily_returns(P(stats_dir) / "run_stats.csv")
-        sel_rows.append({
-            "fold": fr.fold,
-            "discovery_end": schedule.get(fr.fold, ""),
-            "selected_id": fr.selected_id,
-            "selected_inner_sharpe": round(fr.selected_inner_sharpe, 4) if fr.selected_inner_sharpe != -math.inf else None,
-            "outer_sharpe": round(fr.outer["sharpe"], 4) if fr.outer and fr.outer.get("sharpe") is not None else None,
-            "outer_total_return": round(fr.outer["total_return"], 4) if fr.outer and fr.outer.get("total_return") is not None else None,
-            "outer_max_dd": round(fr.outer["max_drawdown"], 4) if fr.outer and fr.outer.get("max_drawdown") is not None else None,
-        })
-    stitched = stitch_selected(curves, order, args.cost_bps_per_side)
-
-    report = {
-        "procedure": "retrospective walk-forward, per fold select from inner-validation only (median-0.5*IQR), freeze, score held-out outer test",
-        "selection_per_fold": sel_rows,
-        "stitched_selected_track": {k: round(v, 6) if isinstance(v, float) else v for k, v in stitched.items()},
-        "stitch_note": "independent from-cash fold runs chained with charged boundary turnover; NOT gapless continuous carry",
-        "folds": {fr.fold: {
-            "inner_leaderboard": fr.inner_leaderboard[:10],
-            "selected": fr.selected_id,
-            "outer": fr.outer,
-            "all_outer_top": fr.all_outer[:10],
-        } for fr in folds_results},
-    }
-    (out_dir / "walk_forward_report.json").write_text(
-        json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print(json.dumps(report["selection_per_fold"], indent=2, sort_keys=True))
-    print("\nSTITCHED SELECTED TRACK:", json.dumps(report["stitched_selected_track"], sort_keys=True))
-    print(f"\nwrote {out_dir / 'walk_forward_report.json'}")
-    return 0
 
 
 if __name__ == "__main__":

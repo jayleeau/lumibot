@@ -19,6 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from functools import lru_cache
+import json
 from types import MappingProxyType
 from typing import Mapping
 
@@ -31,6 +32,7 @@ from strategy_lab.experiment_config import (
     KIND_ALTERNATIVE,
     KIND_CONTROL,
     KIND_HTS,
+    KIND_HTS_V2,
     PRIORITY_DEFERRED,
     PRIORITY_STARTING,
     STATUS_BLOCKED_DATA,
@@ -44,12 +46,19 @@ from strategy_lab.hts_variants import (
     HTS_BASELINE,
     HTS_CONTROL_ID,
     HTS_FAMILIES,
+    HTS_V2_BASELINE,
+    HTS_V2_FAMILIES,
+    HTS_V2_MATRIX_SHA256,
+    HTS_V2_VARIATIONS,
     build_hts_candidates,
+    build_hts_v2_candidates,
+    v2_matrix_hash,
 )
 
 EXPECTED_HTS_VARIATIONS = 100
+EXPECTED_HTS_V2_VARIATIONS = 100
 EXPECTED_ALTERNATIVES = 10
-EXPECTED_TOTAL = 1 + EXPECTED_HTS_VARIATIONS + EXPECTED_ALTERNATIVES
+EXPECTED_TOTAL = 1 + EXPECTED_HTS_VARIATIONS + EXPECTED_HTS_V2_VARIATIONS + EXPECTED_ALTERNATIVES
 
 
 class RegistryValidationError(ExperimentConfigError):
@@ -62,12 +71,13 @@ class ExperimentRegistry:
 
     control: CandidateSpec
     hts_variations: tuple[CandidateSpec, ...]
+    hts_v2_variations: tuple[CandidateSpec, ...]
     alternatives: tuple[CandidateSpec, ...]
     families: Mapping[str, RuleFamily]
 
     def all_candidates(self) -> tuple[CandidateSpec, ...]:
-        """Return the control, then H001-H100, then A01-A10."""
-        return (self.control, *self.hts_variations, *self.alternatives)
+        """Return the control, frozen v1, v2, then alternative candidates."""
+        return (self.control, *self.hts_variations, *self.hts_v2_variations, *self.alternatives)
 
     def candidate_ids(self) -> tuple[str, ...]:
         return tuple(candidate.candidate_id for candidate in self.all_candidates())
@@ -94,6 +104,9 @@ class ExperimentRegistry:
         for family in HTS_FAMILIES:
             if kind in (None, KIND_HTS):
                 ordered.append(self.families[family.family_id])
+        for family in HTS_V2_FAMILIES:
+            if kind in (None, KIND_HTS_V2):
+                ordered.append(self.families[family.family_id])
         for family in ALTERNATIVE_FAMILIES:
             if kind in (None, KIND_ALTERNATIVE):
                 ordered.append(self.families[family.family_id])
@@ -113,6 +126,7 @@ class ExperimentRegistry:
                 candidate.slug,
                 candidate.rule,
                 candidate.hypothesis,
+                candidate.parent_candidate_id or "",
                 family.title if family else "",
                 " ".join(candidate.tags),
             )).lower()
@@ -122,7 +136,7 @@ class ExperimentRegistry:
 
     def statistics(self) -> dict[str, object]:
         """Return counts used in the catalog header and for quick sanity checks."""
-        kinds = {KIND_CONTROL: 0, KIND_HTS: 0, KIND_ALTERNATIVE: 0}
+        kinds = {KIND_CONTROL: 0, KIND_HTS: 0, KIND_HTS_V2: 0, KIND_ALTERNATIVE: 0}
         priorities = {PRIORITY_STARTING: 0, "standard": 0, PRIORITY_DEFERRED: 0}
         statuses: dict[str, int] = {}
         for candidate in self.all_candidates():
@@ -148,7 +162,7 @@ class ExperimentRegistry:
         updated = last_updated or date.today().isoformat()
         stats = self.statistics()
         lines: list[str] = [
-            "# Title: HTS Variation Catalog (Control, H001-H100, A01-A10)",
+            "# Title: HTS Variation Catalog (Control, H001-H100, V001-V100, A01-A10)",
             "",
             "Description: The named, resolved, fingerprinted lookup table for every "
             "registered HTS research configuration.",
@@ -172,8 +186,8 @@ class ExperimentRegistry:
             "part of this catalog's execution path.",
             "",
             "The audited control `HTS_CONTROL_1` is listed separately and is **not** counted as a "
-            f"variation. Totals: {stats['total']} configurations = 1 control + 100 HTS "
-            "variations + 10 alternative strategies.",
+            f"variation. Totals: {stats['total']} configurations = 1 control + 100 frozen v1 HTS "
+            "variations + 100 v2 HTS variations + 10 alternative strategies.",
             "",
             "Planning source: `docs/HTS_100_VARIATIONS_RESEARCH_PLAN.md`; implementation and "
             "validation plan: `docs/HTS_REMAINING_IMPLEMENTATION_PLAN.md`; completed descriptive "
@@ -195,6 +209,7 @@ class ExperimentRegistry:
             "# Filter or search",
             "python scripts/list_strategy_experiments.py --family family-6-concentration",
             "python scripts/list_strategy_experiments.py --kind alternative",
+            "python scripts/list_strategy_experiments.py --kind hts-v2",
             "python scripts/list_strategy_experiments.py --search correlation",
             "",
             "# Rebuild this document or verify the acceptance rules",
@@ -207,6 +222,7 @@ class ExperimentRegistry:
             f"- Registered configurations: {stats['total']}",
             f"- Audited control: {stats['kinds'][KIND_CONTROL]}",
             f"- HTS variations: {stats['kinds'][KIND_HTS]}",
+            f"- HTS v2 variations: {stats['kinds'][KIND_HTS_V2]}",
             f"- Alternative strategies: {stats['kinds'][KIND_ALTERNATIVE]}",
             f"- Families: {stats['families']}",
             "- Blocked on required data: "
@@ -214,14 +230,14 @@ class ExperimentRegistry:
             "",
             "## Master index",
             "",
-            "| ID | Name | Kind | Family | Priority | Status | Fingerprint |",
-            "|---|---|---|---|---|---|---|",
+            "| ID | Name | Kind | Family | Parent | Priority | Status | Fingerprint |",
+            "|---|---|---|---|---|---|---|---|",
         ]
         for candidate in self.all_candidates():
             family = self.families[candidate.family_id]
             lines.append(
                 f"| {candidate.candidate_id} | {candidate.name} | {candidate.kind} | "
-                f"{family.title} | {candidate.priority} | {candidate.status} | "
+                f"{family.title} | {candidate.parent_candidate_id or ''} | {candidate.priority} | {candidate.status} | "
                 f"`{candidate.short_fingerprint()}` |"
             )
         lines.extend(("", "## Families", ""))
@@ -257,7 +273,7 @@ class ExperimentRegistry:
 
 def _family_index() -> Mapping[str, RuleFamily]:
     families: dict[str, RuleFamily] = {CONTROL_FAMILY.family_id: CONTROL_FAMILY}
-    for family in (*HTS_FAMILIES, *ALTERNATIVE_FAMILIES):
+    for family in (*HTS_FAMILIES, *HTS_V2_FAMILIES, *ALTERNATIVE_FAMILIES):
         if family.family_id in families:
             raise RegistryValidationError(f"duplicate family ID {family.family_id!r}")
         families[family.family_id] = family
@@ -282,6 +298,12 @@ def validate_registry(registry: ExperimentRegistry) -> None:
         hts_ids == expected_hts,
         f"HTS variations must be exactly H001-H100 in order; found {hts_ids[:3]}..{hts_ids[-1:]}",
     )
+    v2_ids = [candidate.candidate_id for candidate in registry.hts_v2_variations]
+    expected_v2 = [f"V{number:03d}" for number in range(1, EXPECTED_HTS_V2_VARIATIONS + 1)]
+    _require(
+        v2_ids == expected_v2,
+        f"HTS v2 variations must be exactly V001-V100 in order; found {v2_ids[:3]}..{v2_ids[-1:]}",
+    )
     alt_ids = [candidate.candidate_id for candidate in registry.alternatives]
     expected_alternatives = [f"A{number:02d}" for number in range(1, EXPECTED_ALTERNATIVES + 1)]
     _require(
@@ -291,6 +313,10 @@ def validate_registry(registry: ExperimentRegistry) -> None:
     _require(
         all(candidate.kind == KIND_HTS for candidate in registry.hts_variations),
         "every HTS variation must use kind='hts'",
+    )
+    _require(
+        all(candidate.kind == KIND_HTS_V2 for candidate in registry.hts_v2_variations),
+        "every HTS v2 variation must use kind='hts-v2'",
     )
     _require(
         all(candidate.kind == KIND_ALTERNATIVE for candidate in registry.alternatives),
@@ -314,6 +340,19 @@ def validate_registry(registry: ExperimentRegistry) -> None:
         len(set(fingerprints)) == len(fingerprints),
         "resolved-spec fingerprints must be unique",
     )
+    # Candidate ID deliberately participates in fingerprints, so also reject
+    # two v2 IDs that would execute the same resolved strategy configuration.
+    semantic_maps = [
+        json.dumps(dict(candidate.parameters), sort_keys=True, separators=(",", ":"), default=str)
+        for candidate in registry.hts_v2_variations
+    ]
+    _require(len(set(semantic_maps)) == len(semantic_maps), "HTS v2 resolved parameter maps must be unique")
+    _require(v2_matrix_hash(registry.hts_v2_variations) == HTS_V2_MATRIX_SHA256,
+             "HTS v2 override matrix does not match the frozen plan hash")
+    parent_ids = {HTS_CONTROL_ID, *expected_hts}
+    for candidate in registry.hts_v2_variations:
+        _require(candidate.parent_candidate_id in parent_ids,
+                 f"{candidate.candidate_id}: invalid parent {candidate.parent_candidate_id!r}")
 
     for candidate in registry.all_candidates():
         family = registry.families.get(candidate.family_id)
@@ -330,16 +369,21 @@ def validate_registry(registry: ExperimentRegistry) -> None:
 
     for spec in CONTROL_PARAMETER_SPECS:
         spec.validate_value(HTS_BASELINE[spec.name])
+    for spec in registry.families["family-v2-robust-overlay"].parameters:
+        if spec.name in HTS_V2_BASELINE:
+            spec.validate_value(HTS_V2_BASELINE[spec.name])
 
 
 def build_registry() -> ExperimentRegistry:
     """Assemble and validate the full catalog."""
     hts_candidates = build_hts_candidates()
     control, *variations = hts_candidates
+    v2_variations = build_hts_v2_candidates()
     alternatives = build_alternative_candidates()
     registry = ExperimentRegistry(
         control=control,
         hts_variations=tuple(variations),
+        hts_v2_variations=tuple(v2_variations),
         alternatives=tuple(alternatives),
         families=_family_index(),
     )

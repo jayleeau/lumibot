@@ -34,8 +34,9 @@ EXECUTION_ENGINE = "native-lumibot-backtesting"
 
 KIND_CONTROL = "control"
 KIND_HTS = "hts"
+KIND_HTS_V2 = "hts-v2"
 KIND_ALTERNATIVE = "alternative"
-VALID_KINDS: tuple[str, ...] = (KIND_CONTROL, KIND_HTS, KIND_ALTERNATIVE)
+VALID_KINDS: tuple[str, ...] = (KIND_CONTROL, KIND_HTS, KIND_HTS_V2, KIND_ALTERNATIVE)
 
 STATUS_REGISTERED = "registered"
 STATUS_BLOCKED_DATA = "blocked-data"
@@ -202,6 +203,7 @@ class CandidateSpec:
     priority: str = PRIORITY_STANDARD
     research_refs: tuple[str, ...] = ()
     contract_id: str = CONTRACT_ID
+    parent_candidate_id: str | None = None
 
     def __post_init__(self) -> None:
         if not self.candidate_id:
@@ -218,6 +220,12 @@ class CandidateSpec:
             raise ExperimentConfigError(f"{self.candidate_id}: rule summary is required")
         if not self.hypothesis:
             raise ExperimentConfigError(f"{self.candidate_id}: hypothesis is required")
+        if self.kind == KIND_HTS_V2 and not self.parent_candidate_id:
+            raise ExperimentConfigError(f"{self.candidate_id}: an hts-v2 candidate needs parent_candidate_id")
+        if self.kind != KIND_HTS_V2 and self.parent_candidate_id is not None:
+            raise ExperimentConfigError(
+                f"{self.candidate_id}: parent_candidate_id is reserved for hts-v2 candidates"
+            )
         if self.status == STATUS_BLOCKED_DATA and not self.blocked_reasons:
             raise ExperimentConfigError(f"{self.candidate_id}: a blocked candidate needs a reason")
         keys = [key for key, _ in self.parameters]
@@ -249,6 +257,11 @@ class CandidateSpec:
             "family_id": self.family_id,
             "parameters": _jsonable(dict(self.parameters)),
         }
+        # The original 111 fingerprints are a frozen research record.  Adding
+        # lineage to their payload would change every one, so v2 alone carries
+        # its parent identity in the hash.
+        if self.parent_candidate_id is not None:
+            payload["parent_candidate_id"] = self.parent_candidate_id
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         return sha256(encoded.encode("utf-8")).hexdigest()
 
@@ -263,6 +276,7 @@ class CandidateSpec:
             "slug": self.slug,
             "kind": self.kind,
             "family_id": self.family_id,
+            "parent_candidate_id": self.parent_candidate_id,
             "priority": self.priority,
             "status": self.status,
             "rule": self.rule,

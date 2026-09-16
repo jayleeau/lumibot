@@ -47,13 +47,14 @@ from strategy_lab.experiment_registry import (  # noqa: E402
 def _index_table(registry: ExperimentRegistry, candidates: Sequence[CandidateSpec]) -> str:
     if not candidates:
         return "No matching candidates."
-    rows = [("ID", "Name", "Kind", "Family", "Priority", "Status")]
+    rows = [("ID", "Name", "Kind", "Family", "Parent", "Priority", "Status")]
     for candidate in candidates:
         rows.append((
             candidate.candidate_id,
             candidate.name,
             candidate.kind,
             registry.families[candidate.family_id].title,
+            candidate.parent_candidate_id or "",
             candidate.priority,
             candidate.status,
         ))
@@ -75,6 +76,7 @@ def _detail(registry: ExperimentRegistry, candidate: CandidateSpec) -> str:
         f"  slug        {candidate.slug}",
         f"  kind        {candidate.kind}",
         f"  family      {family.title} ({family.family_id})",
+        f"  parent      {candidate.parent_candidate_id or 'none'}",
         f"  priority    {candidate.priority}",
         f"  status      {candidate.status}",
         f"  rule        {candidate.rule}",
@@ -87,6 +89,9 @@ def _detail(registry: ExperimentRegistry, candidate: CandidateSpec) -> str:
             lines.append(f"    {key} = {value!r}")
     else:
         lines.append("  overrides   none (inherits the control contract)")
+    lines.append("  resolved parameters")
+    for key, value in candidate.parameters:
+        lines.append(f"    {key} = {value!r}")
     if candidate.data_requirements:
         lines.append(f"  requirements {', '.join(candidate.data_requirements)}")
     if candidate.blocked_reasons:
@@ -130,7 +135,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--list", action="store_true", help="print the filtered index table (default action)")
     parser.add_argument("--show", metavar="ID", action="append", default=[], help="print full detail for a candidate ID")
     parser.add_argument("--family", metavar="FAMILY_ID", help="filter by family ID")
-    parser.add_argument("--kind", choices=("control", "hts", "alternative"), help="filter by candidate kind")
+    parser.add_argument("--kind", choices=("control", "hts", "hts-v2", "alternative"), help="filter by candidate kind")
     parser.add_argument(
         "--priority", choices=(PRIORITY_STARTING, PRIORITY_STANDARD, PRIORITY_DEFERRED),
         help="filter by priority",
@@ -166,6 +171,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "registry OK: "
             f"{stats['total']} configurations "
             f"({stats['kinds']['control']} control, {stats['kinds']['hts']} hts, "
+            f"{stats['kinds']['hts-v2']} hts-v2, "
             f"{stats['kinds']['alternative']} alternative), {stats['families']} families"
         )
         return 0

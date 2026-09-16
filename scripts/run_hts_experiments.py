@@ -87,7 +87,12 @@ def classify_candidate(candidate: Any, *, baseline: Mapping[str, Any]) -> tuple[
             return STATUS_RUNNABLE, ()
         reason = BLOCKED_ALTERNATIVES.get(candidate.candidate_id, "no closed data gate")
         return STATUS_BLOCKED_DATA, (reason,)
-    missing = check_supported(dict(candidate.parameters), baseline)
+    known_baseline = dict(baseline)
+    if candidate.kind == "hts-v2":
+        from strategy_lab.hts_variants import HTS_V2_BASELINE
+
+        known_baseline.update(HTS_V2_BASELINE)
+    missing = check_supported(dict(candidate.parameters), known_baseline)
     return (STATUS_RUNNABLE, ()) if not missing else (STATUS_UNSUPPORTED, tuple(missing))
 
 
@@ -114,7 +119,11 @@ def build_manifest(
         classification[candidate.candidate_id] = {
             "kind": candidate.kind,
             "family_id": candidate.family_id,
+            "parent_candidate_id": candidate.parent_candidate_id,
             "fingerprint": candidate.fingerprint(),
+            "resolved_parameters_hash": sha256(
+                json.dumps(dict(candidate.parameters), sort_keys=True, separators=(",", ":"), default=str).encode()
+            ).hexdigest(),
             "implementation_status": "implemented" if status == STATUS_RUNNABLE else "not-implemented",
             "data_status": STATUS_BLOCKED_DATA if status == STATUS_BLOCKED_DATA else "available",
             "status": status,
@@ -151,6 +160,7 @@ def build_manifest(
                 sort_keys=True,
             ).encode()
         ).hexdigest(),
+        "counts": registry.statistics(),
         "candidates": classification,
     }
 
@@ -182,6 +192,8 @@ def _worker(job: Job) -> dict[str, Any]:
     metrics = run.payload["metrics"]
     return {
         "candidate_id": job.candidate_id,
+        "parent_candidate_id": candidate.parent_candidate_id,
+        "kind": candidate.kind,
         "window": job.window_label,
         "status": "ok" if run.ok else "invalid",
         "problems": list(run.problems),
@@ -218,6 +230,8 @@ def _summary_record(result_path: Path, candidate: Any, window_label: str) -> dic
     metrics = payload.get("metrics") or {}
     return {
         "candidate_id": candidate.candidate_id,
+        "parent_candidate_id": candidate.parent_candidate_id,
+        "kind": candidate.kind,
         "window": window_label,
         "status": "ok" if not payload.get("problems") else "invalid",
         "problems": list(payload.get("problems") or []),
@@ -237,11 +251,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--ids", help="comma-separated candidate IDs")
-    parser.add_argument("--kind", choices=("control", "hts", "alternative"))
+    parser.add_argument("--kind", choices=("control", "hts", "hts-v2", "alternative"))
     parser.add_argument("--family", help="family ID filter")
     parser.add_argument("--priority", choices=("starting", "standard", "deferred"))
     parser.add_argument("--all", action="store_true", help="every registered candidate")
     parser.add_argument("--windows", default="six_year,two_year", help="comma-separated window labels")
+    parser.add_argument(
+        "--v2-walk-forward",
+        action="store_true",
+        help="use the prescribed b01-b12 six-month v2 block windows (requires --kind hts-v2 or explicit v2 IDs)",
+    )
     parser.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
     parser.add_argument("--recycle-workers", action="store_true", default=True,
                         help="restart a worker process after each job (default; caps leaked memory)")
@@ -282,7 +301,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.limit:
         candidates = candidates[: args.limit]
 
-    window_labels = [token.strip() for token in args.windows.split(",") if token.strip()]
+    window_labels = (
+        [f"b{number:02d}" for number in range(1, 13)]
+        if args.v2_walk_forward
+        else [token.strip() for token in args.windows.split(",") if token.strip()]
+    )
+    if args.v2_walk_forward and not any(candidate.kind == "hts-v2" for candidate in candidates):
+        print("--v2-walk-forward requires at least one hts-v2 candidate", file=sys.stderr)
+        return 2
     for label in window_labels:
         if label not in WINDOW_BY_LABEL:
             print(f"unknown window {label!r}; known: {sorted(WINDOW_BY_LABEL)}", file=sys.stderr)

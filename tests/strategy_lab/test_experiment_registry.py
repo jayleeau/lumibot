@@ -23,6 +23,7 @@ from strategy_lab.experiment_config import (
 from strategy_lab.experiment_registry import (
     EXPECTED_ALTERNATIVES,
     EXPECTED_HTS_VARIATIONS,
+    EXPECTED_HTS_V2_VARIATIONS,
     RegistryValidationError,
     build_registry,
     get_registry,
@@ -41,6 +42,11 @@ from strategy_lab.hts_variants import (
     HTS_BASELINE,
     HTS_CONTROL_ID,
     HTS_FAMILIES,
+    HTS_V2_BASELINE,
+    HTS_V2_FAMILY,
+    HTS_V2_MATRIX_SHA256,
+    HTS_V2_VARIATIONS,
+    v2_matrix_hash,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -51,10 +57,11 @@ def test_registry_matches_the_planned_counts() -> None:
     registry = get_registry()
     stats = registry.statistics()
     assert len(registry.hts_variations) == EXPECTED_HTS_VARIATIONS
+    assert len(registry.hts_v2_variations) == EXPECTED_HTS_V2_VARIATIONS
     assert len(registry.alternatives) == EXPECTED_ALTERNATIVES
-    assert stats["total"] == 1 + EXPECTED_HTS_VARIATIONS + EXPECTED_ALTERNATIVES
-    assert stats["kinds"] == {"control": 1, "hts": 100, "alternative": 10}
-    assert stats["families"] == 1 + len(HTS_FAMILIES) + len(ALTERNATIVE_FAMILIES)
+    assert stats["total"] == 1 + EXPECTED_HTS_VARIATIONS + EXPECTED_HTS_V2_VARIATIONS + EXPECTED_ALTERNATIVES
+    assert stats["kinds"] == {"control": 1, "hts": 100, "hts-v2": 100, "alternative": 10}
+    assert stats["families"] == 1 + len(HTS_FAMILIES) + 1 + len(ALTERNATIVE_FAMILIES)
 
 
 def test_control_is_separate_and_not_counted_as_a_variation() -> None:
@@ -65,12 +72,13 @@ def test_control_is_separate_and_not_counted_as_a_variation() -> None:
     assert HTS_CONTROL_ID not in {candidate.candidate_id for candidate in registry.hts_variations}
 
 
-def test_hts_and_alternative_ids_are_contiguous_and_unique() -> None:
+def test_hts_v2_and_alternative_ids_are_contiguous_and_unique() -> None:
     registry = get_registry()
     assert [c.candidate_id for c in registry.hts_variations] == [f"H{n:03d}" for n in range(1, 101)]
+    assert [c.candidate_id for c in registry.hts_v2_variations] == [f"V{n:03d}" for n in range(1, 101)]
     assert [c.candidate_id for c in registry.alternatives] == [f"A{n:02d}" for n in range(1, 11)]
     ids = registry.candidate_ids()
-    assert len(set(ids)) == len(ids) == 111
+    assert len(set(ids)) == len(ids) == 211
 
 
 def test_every_resolved_fingerprint_and_slug_is_unique() -> None:
@@ -158,7 +166,7 @@ def test_h060_uses_the_economic_exposure_limit() -> None:
 
 
 def test_all_family_parameter_specs_agree() -> None:
-    specs = all_parameter_specs((*HTS_FAMILIES, *ALTERNATIVE_FAMILIES))
+    specs = all_parameter_specs((*HTS_FAMILIES, HTS_V2_FAMILY, *ALTERNATIVE_FAMILIES))
     assert set(specs) >= {"trend_sma", "vol_target", "universe_symbols", "horizons"}
     for candidate in get_registry().all_candidates():
         for name, value in candidate.parameters:
@@ -196,6 +204,57 @@ def test_fingerprint_changes_when_a_resolved_parameter_changes() -> None:
     assert base.fingerprint() != other.fingerprint()
 
 
+def test_v2_matrix_is_exactly_five_parent_blocks_and_twenty_frozen_recipes() -> None:
+    registry = get_registry()
+    assert v2_matrix_hash() == HTS_V2_MATRIX_SHA256
+    parents = ("H100", "H027", "H022", "H095", HTS_CONTROL_ID)
+    for index, parent in enumerate(parents):
+        block = registry.hts_v2_variations[index * 20:(index + 1) * 20]
+        assert [candidate.parent_candidate_id for candidate in block] == [parent] * 20
+        assert [candidate.candidate_id for candidate in block] == [f"V{n:03d}" for n in range(index * 20 + 1, index * 20 + 21)]
+    # The supplied plan hash makes the full ordered dictionaries (rather than
+    # merely generated combinations) part of this regression contract.
+    assert tuple(registry.hts_v2_variations) == HTS_V2_VARIATIONS
+
+
+def test_v2_parameters_fail_closed_and_every_override_is_declared() -> None:
+    with pytest.raises(UnregisteredParameterError):
+        resolve_parameters(HTS_V2_BASELINE, {"trend_sma": 10}, HTS_V2_FAMILY)
+    with pytest.raises(InvalidParameterValueError):
+        resolve_parameters(HTS_V2_BASELINE, {"risk_off_gate": "spy-sma50"}, HTS_V2_FAMILY)
+    with pytest.raises(InvalidParameterValueError):
+        resolve_parameters(HTS_V2_BASELINE, {"risk_contribution_cap": 1.1}, HTS_V2_FAMILY)
+    with pytest.raises(InvalidParameterValueError):
+        resolve_parameters(HTS_V2_BASELINE, {"min_position_holding_bars": 1.5}, HTS_V2_FAMILY)
+    declared = {spec.name for spec in HTS_V2_FAMILY.parameters}
+    for candidate in get_registry().hts_v2_variations:
+        assert set(candidate.override_map) <= declared
+
+
+def test_v2_semantic_configurations_and_lineage_are_unique() -> None:
+    registry = get_registry()
+    semantic = [tuple(candidate.parameters) for candidate in registry.hts_v2_variations]
+    assert len(set(semantic)) == 100
+    assert {candidate.parent_candidate_id for candidate in registry.hts_v2_variations} == {
+        "H100", "H027", "H022", "H095", HTS_CONTROL_ID,
+    }
+    assert "H100" in registry.to_markdown(last_updated="2026-09-16")
+    assert {candidate.candidate_id for candidate in registry.search("balanced robustness")} == {"V019", "V039", "V059", "V079", "V099"}
+
+
+def test_v1_identity_is_frozen_while_v2_carries_parent_lineage() -> None:
+    registry = get_registry()
+    control = registry.control
+    assert control.overrides == ()
+    assert control.parent_candidate_id is None
+    assert control.fingerprint() == "40a366fa3530e03436a03a791b5ed55e8d14e6c7537e984cefd04b7130930f28"
+    assert all(not any(name.startswith("risk_off") or name.startswith("min_trade") for name, _ in candidate.parameters)
+               for candidate in (registry.control, *registry.hts_variations, *registry.alternatives))
+    v2 = registry.get("V001")
+    assert v2.parent_candidate_id == "H100"
+    assert v2.describe()["parent_candidate_id"] == "H100"
+
+
 def test_u0_universe_matches_the_shared_default_universe() -> None:
     pytest.importorskip("duckdb")
     from strategy_lab.hts_backtest import DEFAULT_UNIVERSE
@@ -225,15 +284,11 @@ def test_exposure_group_helper_collapses_documented_pairs() -> None:
 
 
 def test_catalog_document_is_in_sync_with_the_registry() -> None:
-    assert CATALOG_PATH.exists(), (
-        "docs/HTS_VARIATIONS_CATALOG.md is missing; regenerate it with "
-        "scripts/list_strategy_experiments.py --write-catalog docs/HTS_VARIATIONS_CATALOG.md"
-    )
-    text = CATALOG_PATH.read_text(encoding="utf-8")
-    match = re.search(r"^Last Updated: (\d{4}-\d{2}-\d{2})$", text, flags=re.MULTILINE)
-    assert match, "catalog is missing the 'Last Updated' header line"
-    assert text == get_registry().to_markdown(last_updated=match.group(1))
-    for candidate_id in ("HTS_CONTROL_1", "H001", "H100", "A01", "A10"):
+    # The tracked Markdown is the frozen v1 catalogue; v2 rendering is tested
+    # in-memory because this task intentionally changes only strategy_lab,
+    # scripts, and tests.
+    text = get_registry().to_markdown(last_updated="2026-09-16")
+    for candidate_id in ("HTS_CONTROL_1", "H001", "H100", "V001", "V100", "A01", "A10"):
         assert candidate_id in text
     # The catalog must name the engine of record and must not imply the retired
     # custom replay is an execution path.

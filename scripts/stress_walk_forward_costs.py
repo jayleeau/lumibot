@@ -109,12 +109,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     report = json.loads((suite_out / "walk_forward_report.json").read_text(encoding="utf-8"))
     fees = [float(t) for t in args.fees.split(",")]
 
-    # selected (candidate, test window) per fold
+    # The v2 evaluator freezes one candidate before each named outer discovery
+    # block is revealed.  Stress exactly that frozen path; never reselect at a
+    # higher cost.
     selected: list[tuple[str, str, str]] = []
     for entry in report["selection_per_fold"]:
         fold = entry["fold"]
         cid = entry["selected_id"]
-        selected.append((cid, fold, f"{fold}_test"))
+        block = entry.get("outer_block")
+        if cid is not None and block:
+            selected.append((cid, fold, str(block)))
     if not selected:
         print("no selected paths", file=sys.stderr)
         return 2
@@ -123,8 +127,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     out.mkdir(parents=True, exist_ok=True)
     all_results: list[dict[str, Any]] = []
     for fee in fees:
-        paths = [(cid, fold, f"{fold}_test", fee, f"{fold}_test")
-                 for cid, fold, _ in selected]
+        paths = [(cid, fold, block, fee, block) for cid, fold, block in selected]
         print(f"running {len(paths)} selected paths at {fee:g} bps/side ...", flush=True)
         all_results.extend(_run(paths, out))
 

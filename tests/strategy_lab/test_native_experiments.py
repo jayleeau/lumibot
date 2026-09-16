@@ -14,10 +14,10 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from strategy_lab.experiment_config import EXECUTION_ENGINE, KIND_ALTERNATIVE
+from strategy_lab.experiment_config import EXECUTION_ENGINE, KIND_ALTERNATIVE, KIND_HTS_V2
 from strategy_lab.experiment_registry import get_registry
 from strategy_lab.feature_store import daily_feature_frame
-from strategy_lab.hts_variants import HTS_BASELINE
+from strategy_lab.hts_variants import HTS_BASELINE, HTS_V2_BASELINE
 from strategy_lab.native_alternatives import BLOCKED_ALTERNATIVES, DAILY_ALTERNATIVES
 from strategy_lab.native_experiments import (
     ExperimentWindow,
@@ -33,6 +33,7 @@ from strategy_lab.native_experiments import (
     validate_result,
     validate_warnings,
 )
+from strategy_lab.experiment_validation import stable_hash
 
 
 def test_execution_engine_constant_names_the_native_path() -> None:
@@ -44,7 +45,8 @@ def test_every_hts_candidate_is_now_implemented() -> None:
     for candidate in registry.all_candidates():
         if candidate.kind == KIND_ALTERNATIVE:
             continue
-        assert check_supported(dict(candidate.parameters), HTS_BASELINE) == (), candidate.candidate_id
+        baseline = HTS_V2_BASELINE if candidate.kind == KIND_HTS_V2 else HTS_BASELINE
+        assert check_supported(dict(candidate.parameters), baseline) == (), candidate.candidate_id
 
 
 def test_unknown_parameter_is_reported_not_silently_ignored() -> None:
@@ -100,6 +102,174 @@ def test_lumibot_hour_mapping_preserves_exact_clock_hours() -> None:
     assert not (mapped.index.microsecond != 0).any()
     assert HTS_HOURLY_CONVENTION == (
         "clock-hour 09:00-15:00 ET; a bar labelled T contains [T,T+1h) and is only known at T+1h"
+    )
+
+
+def test_rebalance_hour_ten_and_fifteen_use_prior_completed_sources() -> None:
+    day = pd.Timestamp("2024-09-25")
+    frame = pd.DataFrame(
+        {"open": [9.0, 10.0, 14.0, 15.0], "high": [9.0, 10.0, 14.0, 15.0],
+         "low": [9.0, 10.0, 14.0, 15.0], "close": [90.0, 100.0, 140.0, 999.0],
+         "volume": [1, 1, 1, 1], "atr": [1.0, 1.0, 1.0, 1.0]},
+        index=pd.DatetimeIndex([day.replace(hour=9), day.replace(hour=10), day.replace(hour=14), day.replace(hour=15)]),
+    )
+    strategy = object.__new__(RegistryHtsStrategy)
+    strategy._ctx = SimpleNamespace(inputs=SimpleNamespace(hourly={"AAA": frame}))
+    ten = strategy._stamp(day.date(), 10)
+    fifteen = strategy._stamp(day.date(), 15)
+    assert strategy._completed_row("AAA", ten).name == day.replace(hour=9)
+    assert strategy._execution_price("AAA", ten) == pytest.approx(10.0)
+    assert strategy._completed_row("AAA", fifteen).name == day.replace(hour=14)
+    assert strategy._execution_price("AAA", fifteen) == pytest.approx(15.0)
+
+
+class _SyntheticRebalanceStrategy(RegistryHtsStrategy):
+    """Native strategy double with deterministic cash for rebalance wiring."""
+
+    @property
+    def cash(self) -> float:
+        return 100_000.0
+
+    @property
+    def portfolio_value(self) -> float:
+        return 100_000.0
+
+
+def _synthetic_rebalance_strategy(rebalance_hour: int) -> tuple[RegistryHtsStrategy, list[object]]:
+    """Build one causal rebalance fixture using the production lifecycle method."""
+    day = pd.Timestamp("2024-09-25")
+    next_day = day + pd.offsets.BDay(1)
+    prior_day = (day - pd.offsets.BDay(1)).date()
+    frame = pd.DataFrame(
+        {
+            "open": [9.0, 10.0, 14.0, 15.0, 19.0],
+            "high": [9.5, 10.5, 14.5, 15.5, 19.5],
+            "low": [8.5, 9.5, 13.5, 14.5, 18.5],
+            # The distinct 15:00 values make accidental use of its close/ATR
+            # visible: the mapped variant must retain the completed 14:00 row.
+            "close": [90.0, 100.0, 140.0, 9_999.0, 190.0],
+            "volume": [1.0, 1.0, 1.0, 1.0, 1.0],
+            "atr": [9.0, 10.0, 14.0, 999.0, 19.0],
+        },
+        index=pd.DatetimeIndex([
+            day.replace(hour=9), day.replace(hour=10), day.replace(hour=14), day.replace(hour=15),
+            next_day.replace(hour=9),
+        ]),
+    )
+    strategy = object.__new__(_SyntheticRebalanceStrategy)
+    strategy._params = {**HTS_BASELINE, "signal_hour": 9, "rebalance_hour": rebalance_hour}
+    strategy._ctx = SimpleNamespace(inputs=SimpleNamespace(hourly={"AAA": frame}))
+    strategy._sessions = [prior_day, day.date(), next_day.date()]
+    strategy._session_index = {session: index for index, session in enumerate(strategy._sessions)}
+    strategy._selected = ()
+    strategy._signal_day = None
+    strategy._positions = {}
+    strategy._pending_buys = {}
+    strategy._pending_sells = set()
+    strategy._pending_sell_reason = {}
+    strategy._rejections = []
+    strategy._diag = []
+    strategy._journal = []
+    strategy._entry_edge_events = []
+    strategy._risk_off_race_symbols = set()
+    strategy._deferred_rebalance = None
+    strategy._deferred_rebalance_events = []
+    strategy._test_clock = {"now": day.replace(hour=10 if rebalance_hour == 10 else 14)}
+    strategy.get_datetime = lambda: strategy._test_clock["now"].to_pydatetime()
+    strategy._refresh_risk_off_state = lambda _day: False
+    strategy._schedule_due = lambda _day: True
+    strategy._select = lambda _day: ("AAA",)
+    strategy._update_risk = lambda *_args, **_kwargs: None
+    strategy.update_broker_balances = lambda **_kwargs: None
+    strategy.get_tracked_positions = lambda: ()
+    strategy._target_weights = lambda *_args: {"AAA": 0.10}
+    submitted: list[object] = []
+    strategy.create_order = lambda symbol, **kwargs: SimpleNamespace(
+        asset=SimpleNamespace(symbol=symbol), identifier=f"synthetic-{len(submitted) + 1}", **kwargs,
+    )
+    strategy.submit_order = submitted.append
+    return strategy, submitted
+
+
+@pytest.mark.parametrize(
+    ("rebalance_hour", "expected_atr", "expected_price"),
+    ((10, 9.0, 10.0), (15, 14.0, 19.0)),
+)
+def test_rebalance_hour_ten_and_fifteen_submit_causal_entries(
+    rebalance_hour: int, expected_atr: float, expected_price: float,
+) -> None:
+    # This runs the actual lifecycle and _rebalance path.  The 15:00 case is
+    # triggered at native hour 14 but must retain the 14:00 completed source,
+    # never the synthetic 15:00 close/ATR sentinel.
+    strategy, submitted = _synthetic_rebalance_strategy(rebalance_hour)
+    strategy.on_trading_iteration()
+    if rebalance_hour == 15:
+        assert submitted == []
+        queued = strategy._deferred_rebalance_events[-1]
+        assert queued["completed_source_bar"] == "2024-09-25T14:00:00"
+        assert queued["intended_source_fill_bar"] == "2024-09-25T15:00:00"
+        assert queued["decision_price_source"] == "completed source close; no 15:00 OHLC value read"
+        assert strategy._deferred_rebalance["buys"][0]["reference"] == pytest.approx(140.0)
+        strategy._test_clock["now"] = pd.Timestamp("2024-09-26 09:00")
+        strategy.on_trading_iteration()
+    assert len(submitted) == 1
+    assert submitted[0].side == "buy"
+    assert strategy._pending_buys["AAA"]["atr"] == pytest.approx(expected_atr)
+    intent = next(event for event in reversed(strategy._journal) if event.get("event") == "intent")
+    assert intent["reference"] == pytest.approx(expected_price)
+
+
+def test_rebalance_hour_fifteen_maps_risk_off_flatten_to_the_native_hour_fourteen_iteration() -> None:
+    day = pd.Timestamp("2024-09-25")
+    frame = pd.DataFrame(
+        {"open": [14.0, 15.0], "high": [14.0, 15.0], "low": [14.0, 15.0],
+         "close": [140.0, 150.0], "volume": [1.0, 1.0], "atr": [1.0, 1.0]},
+        index=pd.DatetimeIndex([day.replace(hour=14), day.replace(hour=15)]),
+    )
+    strategy = object.__new__(RegistryHtsStrategy)
+    strategy._params = {**HTS_V2_BASELINE, "rebalance_hour": 15}
+    strategy._ctx = SimpleNamespace(inputs=SimpleNamespace(hourly={"AAA": frame}))
+    strategy._selected = ("AAA",)
+    strategy._positions = {"AAA": {"quantity": 1.0}}
+    strategy._pending_buys = {}
+    strategy._cancelled_pending_buys = {}
+    strategy._pending_sells = set()
+    strategy._pending_sell_reason = {}
+    strategy._protective = {}
+    strategy._journal = []
+    strategy._risk_off_race_symbols = set()
+    strategy._risk_off_flatten_count = 0
+    strategy._risk_off_active = True
+    strategy._deferred_rebalance = None
+    strategy._deferred_rebalance_events = []
+    strategy._sessions = [day.date()]
+    strategy._session_index = {day.date(): 0}
+    clock = {"now": day.replace(hour=14)}
+    strategy.get_datetime = lambda: clock["now"].to_pydatetime()
+    strategy._refresh_risk_off_state = lambda _day: True
+    strategy._update_risk = lambda *_args, **_kwargs: None
+    submitted: list[object] = []
+    strategy.create_order = lambda symbol, **kwargs: SimpleNamespace(
+        asset=SimpleNamespace(symbol=symbol), identifier="risk-off", **kwargs,
+    )
+    strategy.submit_order = submitted.append
+    strategy.on_trading_iteration()
+    assert submitted == []
+    assert strategy._deferred_rebalance_events[-1]["completed_source_bar"] == "2024-09-25T14:00:00"
+    clock["now"] = pd.Timestamp("2024-09-26 09:00")
+    strategy.on_trading_iteration()
+    assert len(submitted) == 1
+    assert submitted[0].side == "sell"
+    assert any(event["event"] == "global_risk_off_flatten" and event["hour"] == 9 for event in strategy._journal)
+    assert strategy._deferred_rebalance_events[-1]["actual_submission_time"] == "2024-09-26T09:00:00"
+
+
+@pytest.mark.parametrize("rebalance_hour", (16, 23))
+def test_check_supported_rejects_rebalance_hours_without_a_native_iteration(rebalance_hour: int) -> None:
+    missing = check_supported({**HTS_V2_BASELINE, "rebalance_hour": rebalance_hour}, HTS_V2_BASELINE)
+    assert missing == (
+        f"rebalance_hour={rebalance_hour!r} (no native LumiBot iteration; "
+        "supported clock hours are 09:00-15:00, with 15:00 mapped to the 14:00 callback)",
     )
 
 
@@ -377,3 +547,245 @@ def test_reentry_cooldown_registry_migrates_the_only_active_key() -> None:
         assert params["reentry_cooldown_bars"] == expected
         assert legacy_name not in params
     assert legacy_name not in dict(registry.get("H099").parameters)
+
+
+def _risk_gate_strategy(gate: str, cooldown: int) -> tuple[RegistryHtsStrategy, list[object]]:
+    """Minimal native strategy state for exercising the real v2 gate refresh."""
+    sessions = [stamp.date() for stamp in pd.bdate_range("2024-01-02", periods=7)]
+    # The first completed session is below SMA200, then every later one is open.
+    spy = pd.DataFrame(
+        {"close": [99.0, 101.0, 101.0, 101.0, 101.0, 101.0, 101.0],
+         "sma100": [100.0] * 7, "sma200": [100.0] * 7},
+        index=pd.DatetimeIndex(sessions),
+    )
+    strategy = object.__new__(RegistryHtsStrategy)
+    strategy._params = {**HTS_V2_BASELINE, "risk_off_gate": gate, "risk_off_cooldown_bars": cooldown}
+    strategy._ctx = SimpleNamespace(inputs=SimpleNamespace(
+        benchmark={"SPY": spy, "QQQ": spy}, breadth=(), breadth_expected_count=0,
+    ))
+    strategy._sessions = sessions
+    strategy._session_index = {day: index for index, day in enumerate(sessions)}
+    strategy._journal = []
+    strategy._risk_off_active = False
+    strategy._last_risk_gate_session = None
+    strategy._re_risk_deadline_index = None
+    strategy._risk_off_transitions = []
+    return strategy, sessions
+
+
+def test_v2_risk_off_gate_and_cooldown_change_native_state_not_legacy_market_gate() -> None:
+    ungated, sessions = _risk_gate_strategy("none", 0)
+    gated, _ = _risk_gate_strategy("spy-sma200", 0)
+    for day in sessions[1:]:
+        assert ungated._refresh_risk_off_state(day) is False
+    states = [gated._refresh_risk_off_state(day) for day in sessions[1:]]
+    assert states[0] is True  # SPY below SMA200 cancels/suppresses risk only in the gated run.
+    assert states[1] is False
+    assert gated._risk_off_transitions[0]["reason"] == "gate_closed"
+
+    delayed, delayed_sessions = _risk_gate_strategy("spy-sma200", 3)
+    delayed_states = [delayed._refresh_risk_off_state(day) for day in delayed_sessions[1:]]
+    # After the single closed observation, exactly three later completed
+    # sessions remain cash; the fourth open observation permits re-risk.
+    assert delayed_states[:4] == [True, True, True, True]
+    assert delayed_states[4] is False
+
+
+def test_v2_global_risk_off_cancels_buys_and_flattens_the_entire_native_book() -> None:
+    strategy = object.__new__(RegistryHtsStrategy)
+    strategy._positions = {
+        "AAA": {"quantity": 1.0},
+        "BBB": {"quantity": 2.0},
+    }
+    pending_order = SimpleNamespace()
+    strategy._pending_buys = {"CCC": {"order": pending_order, "atr": 1.0}}
+    strategy._cancelled_pending_buys = {}
+    strategy._pending_sells = set()
+    strategy._pending_sell_reason = {}
+    strategy._protective = {}
+    strategy._journal = []
+    strategy._risk_off_race_symbols = set()
+    strategy._risk_off_flatten_count = 0
+    strategy._stamp = lambda _day, _hour: pd.Timestamp("2024-01-03 10:00")
+    strategy._execution_price = lambda _symbol, _stamp: 100.0
+    cancelled: list[object] = []
+    submitted: list[object] = []
+    strategy.cancel_order = cancelled.append
+    strategy.create_order = lambda symbol, **kwargs: SimpleNamespace(asset=SimpleNamespace(symbol=symbol), **kwargs)
+    strategy.submit_order = submitted.append
+    strategy._flatten_risk_off(pd.Timestamp("2024-01-03").date(), 10)
+    assert cancelled == [pending_order]
+    assert {order.asset.symbol for order in submitted} == {"AAA", "BBB"}
+    assert strategy._risk_off_flatten_count == 2
+
+
+def test_v2_resting_atr_alias_and_stop_multiple_change_native_stop_levels() -> None:
+    submitted: list[object] = []
+    strategy = object.__new__(RegistryHtsStrategy)
+    strategy._positions = {"AAA": {"quantity": 2.0, "entry_price": 100.0, "entry_atr": 5.0}}
+    strategy._protective = {}
+    strategy._journal = []
+    strategy.create_order = lambda symbol, **kwargs: SimpleNamespace(asset=SimpleNamespace(symbol=symbol), **kwargs)
+    strategy.submit_order = submitted.append
+    strategy._params = {"exit_mode": "resting-stop-atr", "atr_k": 2.0}
+    strategy._place_protective_stop("AAA")
+    assert strategy._positions["AAA"]["protective_level"] == pytest.approx(90.0)
+    strategy._positions["AAA"].pop("protective_level")
+    strategy._params["atr_k"] = 4.0
+    strategy._place_protective_stop("AAA")
+    assert strategy._positions["AAA"]["protective_level"] == pytest.approx(80.0)
+
+
+def _v2_weight_strategy(cap: float | None) -> tuple[RegistryHtsStrategy, object, object]:
+    sessions = [stamp.date() for stamp in pd.bdate_range("2024-01-02", periods=2)]
+    hourly = pd.DataFrame(
+        {"open": [100.0, 100.0], "high": [100.0, 100.0], "low": [100.0, 100.0],
+         "close": [100.0, 100.0], "volume": [1.0, 1.0], "atr": [5.0, 5.0]},
+        index=pd.DatetimeIndex([pd.Timestamp(sessions[1]).replace(hour=9), pd.Timestamp(sessions[1]).replace(hour=10)]),
+    )
+    daily = pd.DataFrame({"vol20": [0.20], "ret1": [0.01]}, index=pd.DatetimeIndex([sessions[0]]))
+    strategy = object.__new__(RegistryHtsStrategy)
+    strategy._params = {**HTS_V2_BASELINE, "risk_contribution_cap": cap}
+    strategy._ctx = SimpleNamespace(inputs=SimpleNamespace(daily={"AAA": daily}, hourly={"AAA": hourly}))
+    strategy._selected = ("AAA",)
+    strategy._risk_cap_events = []
+    return strategy, sessions[1], sessions[0]
+
+
+def test_v2_risk_cap_changes_the_native_target_weight_after_parent_sizing() -> None:
+    uncapped, day, session = _v2_weight_strategy(None)
+    capped, _day, _session = _v2_weight_strategy(0.005)
+    uncapped_weights = uncapped._target_weights(day, 10, session)
+    capped_weights = capped._target_weights(day, 10, session)
+    assert uncapped_weights["AAA"] == pytest.approx(0.995)
+    # 2 * 5 / 100 = 10% stop room; 0.5% NAV risk caps the .995 parent
+    # allocation at 5% with no redistribution.
+    assert capped_weights["AAA"] == pytest.approx(0.05)
+    assert capped._risk_cap_events[-1]["risk_contribution"] == pytest.approx(0.005)
+
+
+def _minimum_hold_strategy(holding_bars: int) -> tuple[RegistryHtsStrategy, list[object]]:
+    sessions = [stamp.date() for stamp in pd.bdate_range("2024-01-02", periods=5)]
+    daily = {
+        "AAA": pd.DataFrame({"close": [101.0] * 5, "sma": [100.0] * 5, "ret": [0.10] * 5,
+                             "mdv": [10_000_000.0] * 5}, index=pd.DatetimeIndex(sessions)),
+        "BBB": pd.DataFrame({"close": [101.0] * 5, "sma": [100.0] * 5, "ret": [0.20] * 5,
+                             "mdv": [10_000_000.0] * 5}, index=pd.DatetimeIndex(sessions)),
+    }
+    strategy = object.__new__(RegistryHtsStrategy)
+    strategy._params = {**HTS_V2_BASELINE, "top_n": 1, "min_position_holding_bars": holding_bars}
+    strategy._ctx = SimpleNamespace(inputs=SimpleNamespace(daily=daily, benchmark={}, breadth=()))
+    strategy._ordered = ("AAA", "BBB")
+    strategy._universe_order = {"AAA": 0, "BBB": 1}
+    strategy._sessions = sessions
+    strategy._session_index = {day: index for index, day in enumerate(sessions)}
+    strategy._positions = {"AAA": {"entry_session": sessions[0]}}
+    strategy._cooldowns = {}
+    strategy._ranks = {}
+    strategy._minimum_hold_deferrals = 0
+    strategy._risk_off_active = False
+    return strategy, sessions
+
+
+def test_v2_minimum_hold_changes_native_selection_but_not_stop_ownership() -> None:
+    immediate, sessions = _minimum_hold_strategy(0)
+    held, _ = _minimum_hold_strategy(3)
+    # At the next selection, BBB ranks higher.  Only the v2 hold protects the
+    # existing slot; virtual/protective stop processing remains outside _select.
+    assert immediate._select(sessions[2]) == ("BBB",)
+    assert held._select(sessions[2]) == ("AAA",)
+    assert held._minimum_hold_deferrals == 1
+    # At the exact three-complete-session expiry the incumbent is replaceable.
+    assert held._select(sessions[4]) == ("BBB",)
+
+
+class _EdgeStrategy(RegistryHtsStrategy):
+    @property
+    def cash(self) -> float:
+        return 100_000.0
+
+    @property
+    def portfolio_value(self) -> float:
+        return 100_000.0
+
+
+def _v2_edge_rebalance_strategy(prior_return: float, threshold: float) -> tuple[RegistryHtsStrategy, list[tuple]]:
+    sessions = [stamp.date() for stamp in pd.bdate_range("2024-01-02", periods=2)]
+    hourly = pd.DataFrame(
+        {"open": [100.0, 100.0], "high": [101.0, 101.0], "low": [99.0, 99.0],
+         "close": [100.0, 100.0], "volume": [1.0, 1.0], "atr": [5.0, 5.0]},
+        index=pd.DatetimeIndex([pd.Timestamp(sessions[1]).replace(hour=9), pd.Timestamp(sessions[1]).replace(hour=10)]),
+    )
+    daily = pd.DataFrame({"ret": [prior_return]}, index=pd.DatetimeIndex([sessions[0]]))
+    strategy = object.__new__(_EdgeStrategy)
+    strategy._params = {**HTS_V2_BASELINE, "min_trade_edge_bps": threshold}
+    strategy._ctx = SimpleNamespace(inputs=SimpleNamespace(daily={"AAA": daily}, hourly={"AAA": hourly}))
+    strategy._selected = ("AAA",)
+    strategy._positions = {}
+    strategy._pending_buys = {}
+    strategy._pending_sells = set()
+    strategy._rejections = []
+    strategy._diag = []
+    strategy._journal = []
+    strategy._entry_edge_events = []
+    strategy._risk_off_active = False
+    strategy._sessions = sessions
+    strategy._session_index = {day: index for index, day in enumerate(sessions)}
+    strategy.update_broker_balances = lambda **_kwargs: None
+    strategy.get_tracked_positions = lambda: ()
+    strategy._target_weights = lambda *_args: {"AAA": 0.10}
+    submitted: list[tuple] = []
+    strategy._submit_buy = lambda *args: submitted.append(args)
+    return strategy, submitted
+
+
+def test_v2_edge_floor_is_applied_immediately_before_native_new_buys() -> None:
+    # About 0.5 bps, so a 14 bps hurdle rejects while zero remains disabled.
+    zero, zero_buys = _v2_edge_rebalance_strategy(0.001, 0.0)
+    floor, floor_buys = _v2_edge_rebalance_strategy(0.001, 14.0)
+    day = zero._sessions[1]
+    zero._rebalance(day, 10)
+    floor._rebalance(day, 10)
+    assert len(zero_buys) == 1
+    assert floor_buys == []
+    assert floor._entry_edge_events[-1]["accepted"] is False
+    # Exact threshold uses >=, so equality accepts.
+    exact, exact_buys = _v2_edge_rebalance_strategy(math.expm1(math.log1p(0.0014) * 20.0), 14.0)
+    exact._rebalance(exact._sessions[1], 10)
+    assert len(exact_buys) == 1
+    assert exact._entry_edge_events[-1]["expected_move_bps"] == pytest.approx(14.0)
+
+
+def test_v2_default_parent_paths_are_native_event_identical(tmp_path: Path) -> None:
+    """The five default overlays must not perturb their frozen v1 parents."""
+    from strategy_lab.native_experiments import WINDOW_BY_LABEL, run_candidate
+
+    registry = get_registry()
+    for parent_id, v2_id in (
+        ("H100", "V001"), ("H027", "V021"), ("H022", "V041"),
+        ("H095", "V061"), ("HTS_CONTROL_1", "V081"),
+    ):
+        parent = run_candidate(registry.get(parent_id), WINDOW_BY_LABEL["b01"], tmp_path, control_baseline=HTS_BASELINE)
+        child = run_candidate(registry.get(v2_id), WINDOW_BY_LABEL["b01"], tmp_path, control_baseline=HTS_BASELINE)
+        assert parent.ok and child.ok
+        assert stable_hash(parent.out_dir) == stable_hash(child.out_dir), (parent_id, v2_id)
+
+
+def test_v2_hour_fifteen_native_pilot_candidates_have_causal_non_flat_fills(tmp_path: Path) -> None:
+    """The formerly dead P02/P20 paths must enter through native LumiBot."""
+    from strategy_lab.native_experiments import run_candidate
+
+    registry = get_registry()
+    for candidate_id in ("V002", "V100"):
+        run = run_candidate(
+            registry.get(candidate_id), WINDOW_BY_LABEL["b01"], tmp_path, control_baseline=HTS_BASELINE,
+        )
+        assert run.ok, run.problems
+        assert run.payload["fills"] > 0
+        assert run.payload["metrics"]["total_return"] != 0.0
+        events = run.payload["deferred_rebalance_events"]
+        queued = next(event for event in events if event["event"] == "deferred_rebalance_queued")
+        submitted = next(event for event in events if event["event"] == "deferred_rebalance_submitted")
+        assert queued["native_iteration_hour"] == 14
+        assert queued["completed_source_bar"].endswith("T14:00:00")
+        assert submitted["actual_submission_time"].endswith("T09:00:00")

@@ -140,6 +140,120 @@ def market_gate_open(
     return True
 
 
+def risk_off_gate_open(
+    gate: str,
+    *,
+    benchmark_rows: Mapping[str, pd.Series | None],
+    breadth_rows: Sequence[pd.Series | None],
+    breadth_expected_count: int,
+) -> bool:
+    """Return whether the separate v2 global risk gate permits risk.
+
+    Unlike the legacy ``market_gate``, this is a portfolio-level switch: a
+    closed value means cash, not merely that a candidate symbol is ineligible.
+    All reads are from a completed daily session and incomplete benchmark or
+    fixed-basket breadth evidence fails closed.
+    """
+    if gate == "none":
+        return True
+    if gate in ("spy-sma100", "spy-sma200", "qqq-sma100"):
+        symbol, _separator, window_token = gate.partition("-sma")
+        row = benchmark_rows.get(symbol.upper())
+        column = f"sma{window_token}"
+        if row is None or not finite(row.get("close")) or not finite(row.get(column)):
+            return False
+        return float(row["close"]) > float(row[column])
+    if gate in ("breadth-50", "breadth-60"):
+        if breadth_expected_count <= 0 or len(breadth_rows) != int(breadth_expected_count):
+            return False
+        threshold = 0.50 if gate == "breadth-50" else 0.60
+        above = 0
+        for row in breadth_rows:
+            if row is None or not finite(row.get("close")) or not finite(row.get("sma50")):
+                return False
+            if float(row["close"]) > float(row["sma50"]):
+                above += 1
+        return (above / float(breadth_expected_count)) > threshold
+    raise PolicyError(f"unknown v2 risk-off gate: {gate!r}")
+
+
+def cap_risk_contributions(
+    weights: Mapping[str, float],
+    *,
+    atr: Mapping[str, float],
+    price: Mapping[str, float],
+    atr_k: float,
+    risk_contribution_cap: float | None,
+) -> dict[str, float]:
+    """Cap each post-sizing weight by its ex-ante ATR-stop risk.
+
+    The cap is applied after the parent sizing mode and before the leveraged
+    cap.  Invalid price or ATR is ineligible when the cap is enabled; capacity
+    trimmed here intentionally remains cash and is never redistributed.
+    """
+    if risk_contribution_cap is None:
+        return {symbol: float(weight) for symbol, weight in weights.items()}
+    cap = float(risk_contribution_cap)
+    multiple = float(atr_k)
+    if not math.isfinite(cap) or cap < 0.0 or not math.isfinite(multiple) or multiple <= 0.0:
+        return {}
+    capped: dict[str, float] = {}
+    for symbol, weight in weights.items():
+        distance_atr = atr.get(symbol)
+        executable_price = price.get(symbol)
+        if (
+            not finite(distance_atr)
+            or not finite(executable_price)
+            or float(distance_atr) <= 0.0
+            or float(executable_price) <= 0.0
+        ):
+            continue
+        relative_stop_distance = multiple * float(distance_atr) / float(executable_price)
+        if not math.isfinite(relative_stop_distance) or relative_stop_distance <= 0.0:
+            continue
+        capped[symbol] = min(float(weight), cap / relative_stop_distance)
+    return capped
+
+
+def expected_trade_move_bps(
+    *,
+    prior_return: float,
+    return_period: int,
+    holding_bars: int,
+    atr_k: float,
+    atr: float,
+    executable_price: float,
+) -> float | None:
+    """Return the causal v2 entry-screen proxy, or ``None`` for bad inputs.
+
+    ``prior_return`` is the completed daily return over ``return_period``.  The
+    proxy is deliberately bounded by the completed hourly stop room; it is a
+    deterministic screen, never a forecast of future profit.
+    """
+    if (
+        not finite(prior_return)
+        or not isinstance(return_period, int)
+        or isinstance(return_period, bool)
+        or return_period <= 0
+        or not isinstance(holding_bars, int)
+        or isinstance(holding_bars, bool)
+        or not finite(atr_k)
+        or not finite(atr)
+        or not finite(executable_price)
+    ):
+        return None
+    if float(prior_return) <= -1.0 or float(atr_k) <= 0.0 or float(atr) <= 0.0 or float(executable_price) <= 0.0:
+        return None
+    horizon = max(1, int(holding_bars))
+    try:
+        trend_move = max(0.0, math.expm1(math.log1p(float(prior_return)) * horizon / int(return_period)))
+    except (OverflowError, ValueError):
+        return None
+    stop_room = float(atr_k) * float(atr) / float(executable_price)
+    result = 10_000.0 * min(trend_move, stop_room)
+    return float(result) if math.isfinite(result) else None
+
+
 def benchmark_sma(close: pd.Series, window: int) -> pd.Series:
     return close.rolling(int(window), min_periods=int(window)).mean()
 
@@ -210,6 +324,7 @@ def select_holdings(
     exposure_of: Callable[[str], str] | None,
     correlation_of: Callable[[str, str], float] | None,
     correlation_cap: float | None,
+    mandatory_held: Sequence[str] = (),
 ) -> Selection:
     """Apply retention, exposure-group, and correlation rules in rank order."""
     ranks = {symbol: index + 1 for index, (symbol, _score) in enumerate(ranked)}
@@ -221,8 +336,19 @@ def select_holdings(
             group = exposure_of(symbol)
             groups[group] = groups.get(group, 0) + 1
 
+    # v2 minimum-hold positions are carried first even if their ranking evidence
+    # has deteriorated or disappeared.  They still consume the same top_n slots,
+    # so a replacement can never silently exceed the gross/slot budget.
+    for symbol in mandatory_held:
+        if len(selected) >= int(top_n) or symbol in selected:
+            continue
+        selected.append(symbol)
+        note(symbol)
+
     if rank_buffer is not None:
         for symbol in held:
+            if symbol in selected:
+                continue
             rank = ranks.get(symbol)
             if rank is not None and rank <= int(rank_buffer) and len(selected) < int(top_n):
                 selected.append(symbol)

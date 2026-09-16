@@ -11,13 +11,16 @@ or authorize a paper session.
 """
 from __future__ import annotations
 
+import json
 import re
+from hashlib import sha256
 from dataclasses import replace
 from typing import Any, Iterable, Mapping
 
 from strategy_lab.experiment_config import (
     CONTROL_FAMILY_ID,
     KIND_HTS,
+    KIND_HTS_V2,
     PRIORITY_DEFERRED,
     PRIORITY_STANDARD,
     PRIORITY_STARTING,
@@ -56,6 +59,7 @@ EXIT_MODES: tuple[str, ...] = (
     "fixed-entry-atr",
     "virtual-trail-breakeven-2r",
     "resting-stop-2atr",
+    "resting-stop-atr",
     "virtual-trail-plus-emergency-4atr",
 )
 MARKET_GATES: tuple[str, ...] = (
@@ -631,3 +635,187 @@ def build_hts_candidates() -> tuple[CandidateSpec, ...]:
     """Return the control followed by H001-H100 in ID order."""
     variations = (*_F1, *_F2, *_F3, *_F4, *_F5, *_F6, *_F7, *_F8, *_F9, *_F10)
     return (HTS_CONTROL, *variations)
+
+
+# --- HTS v2: frozen robustness matrix (V001-V100) --------------------------
+#
+# This catalogue is deliberately separate from the discovery catalogue above.
+# The values below are the complete, predeclared 5-parent x 20-recipe matrix in
+# plans/hts_v2_plan.md.  Do not turn these recipes into a Cartesian product:
+# adding a row here is a new research trial and must be named deliberately.
+HTS_V2_DEFAULTS: dict[str, Any] = {
+    "risk_off_gate": "none",
+    "risk_off_cooldown_bars": 0,
+    "risk_contribution_cap": None,
+    "min_trade_edge_bps": 0.0,
+    "min_position_holding_bars": 0,
+}
+HTS_V2_BASELINE: dict[str, Any] = {**HTS_BASELINE, **HTS_V2_DEFAULTS}
+
+_V2_NEW_PARAMETER_SPECS: tuple[ParameterSpec, ...] = (
+    _str(
+        "risk_off_gate",
+        "Portfolio-wide prior-session cash switch; a closed gate cancels buys and flattens risk.",
+        ("none", "spy-sma100", "spy-sma200", "qqq-sma100", "breadth-50", "breadth-60"),
+    ),
+    _int(
+        "risk_off_cooldown_bars",
+        "Complete exchange sessions required after the last closed global-gate observation.",
+        0,
+        20,
+        "sessions",
+    ),
+    _nullable_float(
+        "risk_contribution_cap",
+        "Maximum single-position ex-ante ATR stop loss as a NAV fraction; None disables it.",
+        0.0,
+        1.0,
+    ),
+    _float(
+        "min_trade_edge_bps",
+        "Minimum causal trend/stop-room entry proxy in basis points; zero disables it.",
+        0.0,
+        1000.0,
+        "bps",
+    ),
+    _int(
+        "min_position_holding_bars",
+        "Minimum complete exchange-session bars before an ordinary selection exit.",
+        0,
+        60,
+        "sessions",
+    ),
+)
+
+# These include every inherited parent-seed key, every reused control, and all
+# new v2 parameters.  The explicit union is the registry's fail-closed contract.
+HTS_V2_FAMILY = RuleFamily(
+    family_id="family-v2-robust-overlay",
+    title="HTS v2 robustness overlays",
+    hypothesis=(
+        "Predeclared gates, risk caps, entry hurdles, minimum holds, and execution timing "
+        "may improve robustness without redefining the frozen v1 discovery catalogue."
+    ),
+    parameters=(
+        *_params(
+            "atr_period", "atr_k", "exit_mode", "leveraged_cap", "vol_covariance_sessions",
+            "vol_target", "weight_mode", "rebalance_hour", "reentry_cooldown_bars", "top_n",
+            "exposure_group_limit",
+        ),
+        *_V2_NEW_PARAMETER_SPECS,
+    ),
+    notes=(
+        "V001-V100 only.  Parent identity is lineage metadata, not a strategy parameter; "
+        "all omitted knobs inherit HTS_V2_BASELINE."
+    ),
+)
+HTS_V2_FAMILIES: tuple[RuleFamily, ...] = (HTS_V2_FAMILY,)
+
+_V2_PARENT_SEEDS: tuple[tuple[str, dict[str, Any]], ...] = (
+    (
+        "H100",
+        {
+            "exit_mode": "resting-stop-atr",
+            "weight_mode": "vol-target",
+            "vol_target": 0.20,
+            "vol_covariance_sessions": 60,
+        },
+    ),
+    ("H027", {"atr_period": 28, "atr_k": 1.5}),
+    ("H022", {"atr_period": 7, "atr_k": 1.5}),
+    ("H095", {"leveraged_cap": 0.25}),
+    (HTS_CONTROL_ID, {}),
+)
+
+_V2_OVERLAY_RECIPES: tuple[tuple[str, str, dict[str, Any], str], ...] = (
+    ("P01", "lineage parity anchor", {}, "Run the parent behaviour with every new v2 mechanism disabled."),
+    ("P02", "last actionable entry", {"rebalance_hour": 15}, "Use completed 14:00 inputs for 15:00 action."),
+    ("P03", "3 ATR stop", {"atr_k": 3.0}, "Use a 3-ATR stop multiple."),
+    ("P04", "4 ATR stop", {"atr_k": 4.0}, "Use a 4-ATR stop multiple."),
+    ("P05", "3-session stop re-entry cooldown", {"reentry_cooldown_bars": 3}, "Delay re-entry after a stop."),
+    ("P06", "5-session stop re-entry cooldown", {"reentry_cooldown_bars": 5}, "Use the longer stop cooldown."),
+    ("P07", "3-session minimum hold", {"min_position_holding_bars": 3}, "Defer ordinary rank exits."),
+    ("P08", "5-session minimum hold", {"min_position_holding_bars": 5}, "Use the longer ordinary-exit hold."),
+    ("P09", "14 bps edge floor", {"min_trade_edge_bps": 14.0}, "Require a two-round-trip-cost entry proxy."),
+    ("P10", "28 bps edge floor", {"min_trade_edge_bps": 28.0}, "Require a four-round-trip-cost entry proxy."),
+    ("P11", "1.00% NAV risk-contribution cap", {"risk_contribution_cap": 0.01}, "Cap one stop risk at 1% NAV."),
+    ("P12", "0.50% NAV risk-contribution cap", {"risk_contribution_cap": 0.005}, "Cap one stop risk at 0.5% NAV."),
+    ("P13", "SPY SMA100 global risk-off", {"risk_off_gate": "spy-sma100"}, "Use the SPY SMA100 cash switch."),
+    ("P14", "SPY SMA200 global risk-off", {"risk_off_gate": "spy-sma200"}, "Use the SPY SMA200 cash switch."),
+    ("P15", "QQQ SMA100 global risk-off", {"risk_off_gate": "qqq-sma100"}, "Use the QQQ SMA100 cash switch."),
+    ("P16", "50% breadth global risk-off", {"risk_off_gate": "breadth-50"}, "Require strict majority SMA50 breadth."),
+    ("P17", "60% breadth global risk-off", {"risk_off_gate": "breadth-60"}, "Require more than 60% SMA50 breadth."),
+    (
+        "P18",
+        "SPY SMA200 plus 3-session re-risk delay",
+        {"risk_off_cooldown_bars": 3, "risk_off_gate": "spy-sma200"},
+        "Add three completed sessions of gate hysteresis.",
+    ),
+    (
+        "P19",
+        "balanced robustness stack",
+        {
+            "atr_k": 3.0, "exposure_group_limit": 1, "min_position_holding_bars": 3,
+            "min_trade_edge_bps": 14.0, "rebalance_hour": 15, "reentry_cooldown_bars": 3,
+            "risk_contribution_cap": 0.01, "risk_off_cooldown_bars": 3,
+            "risk_off_gate": "breadth-50", "top_n": 4,
+        },
+        "Combine moderate robustness controls with four economically distinct slots.",
+    ),
+    (
+        "P20",
+        "strict robustness stack",
+        {
+            "atr_k": 4.0, "exposure_group_limit": 1, "min_position_holding_bars": 5,
+            "min_trade_edge_bps": 28.0, "rebalance_hour": 15, "reentry_cooldown_bars": 5,
+            "risk_contribution_cap": 0.005, "risk_off_cooldown_bars": 5,
+            "risk_off_gate": "breadth-60", "top_n": 4,
+        },
+        "Combine strict robustness controls with four economically distinct slots.",
+    ),
+)
+
+
+def _v2(number: int, parent_candidate_id: str, name: str, overrides: Mapping[str, Any], rule: str) -> CandidateSpec:
+    candidate_id = f"V{number:03d}"
+    return CandidateSpec(
+        candidate_id=candidate_id,
+        name=f"{parent_candidate_id} + {name}",
+        slug=_slug(candidate_id, f"{parent_candidate_id}-{name}"),
+        kind=KIND_HTS_V2,
+        family_id=HTS_V2_FAMILY.family_id,
+        rule=rule,
+        hypothesis=HTS_V2_FAMILY.hypothesis,
+        parameters=resolve_parameters(HTS_V2_BASELINE, overrides, HTS_V2_FAMILY),
+        overrides=frozen_pairs(overrides),
+        tags=("hts-v2", "robustness", parent_candidate_id.lower()),
+        data_requirements=(PROTECTIVE_ORDER_REQUIREMENT,) if parent_candidate_id == "H100" else (),
+        parent_candidate_id=parent_candidate_id,
+    )
+
+
+def build_hts_v2_candidates() -> tuple[CandidateSpec, ...]:
+    """Return the frozen V001-V100 robustness catalogue in matrix row order."""
+    candidates: list[CandidateSpec] = []
+    for parent_candidate_id, seed in _V2_PARENT_SEEDS:
+        for _recipe_id, label, overlay, rule in _V2_OVERLAY_RECIPES:
+            overrides = {**seed, **overlay}
+            candidates.append(_v2(len(candidates) + 1, parent_candidate_id, label, overrides, rule))
+    return tuple(candidates)
+
+
+HTS_V2_VARIATIONS = build_hts_v2_candidates()
+HTS_V2_MATRIX_SHA256 = "ce1a69e1ba5d057d0773839a0be2155a80f572ff3fe8c2786d203320d02a70ef"
+
+
+def v2_matrix_hash(candidates: Iterable[CandidateSpec] = HTS_V2_VARIATIONS) -> str:
+    """Return the plan-defined hash of ordered v2 IDs and exact override maps."""
+    lines = [
+        f"{candidate.candidate_id}|{json.dumps(dict(candidate.overrides), sort_keys=True, separators=(',', ':'))}"
+        for candidate in candidates
+    ]
+    return sha256("\n".join(lines).encode("utf-8")).hexdigest()
+
+
+if v2_matrix_hash() != HTS_V2_MATRIX_SHA256:
+    raise RuntimeError("HTS v2 override matrix diverged from plans/hts_v2_plan.md")
