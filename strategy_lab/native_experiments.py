@@ -1676,8 +1676,14 @@ def _run_engine(
     inputs: PreparedInputs,
     params: Mapping[str, Any],
     prefix: Path,
+    tearsheet_dir: Path | None = None,
 ) -> tuple[Strategy, float]:
     started = time.perf_counter()
+    tearsheet_path = None
+    tearsheet_metrics_path = None
+    if tearsheet_dir is not None:
+        tearsheet_path = str(tearsheet_dir / "tearsheet.html")
+        tearsheet_metrics_path = str(tearsheet_dir / "tearsheet_metrics.json")
     _, strategy = strategy_class.run_backtest(
         datasource_class=PandasDataBacktesting,
         pandas_data=list(inputs.lumibot_data),
@@ -1707,7 +1713,9 @@ def _run_engine(
         analyze_backtest=True,
         show_plot=False,
         show_tearsheet=False,
-        save_tearsheet=False,
+        save_tearsheet=tearsheet_dir is not None,
+        tearsheet_file=tearsheet_path,
+        tearsheet_metrics_file=tearsheet_metrics_path,
         show_indicators=False,
         save_logfile=False,
         show_progress_bar=False,
@@ -1923,6 +1931,7 @@ def run_candidate(
     out_dir: Path,
     *,
     control_baseline: Mapping[str, Any],
+    tearsheet_dir: Path | None = None,
 ) -> CandidateRun:
     """Run one candidate over one window on the native engine."""
     params = dict(candidate.parameters)
@@ -1959,6 +1968,7 @@ def run_candidate(
     try:
         strategy, elapsed = _run_engine(
             strategy_class=RegistryHtsStrategy, inputs=inputs, params=params, prefix=prefix,
+            tearsheet_dir=tearsheet_dir,
         )
         payload = build_payload(
             candidate=candidate, window=window, strategy=strategy, params=params,
