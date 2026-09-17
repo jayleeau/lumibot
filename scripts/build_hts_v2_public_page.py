@@ -35,11 +35,13 @@ def main() -> int:
 
     six = [r for r in res if r["window"] == "six_year"]
     six.sort(key=lambda r: r.get("sharpe") if r.get("sharpe") is not None else -999, reverse=True)
+    two = {r["candidate_id"]: r for r in res if r["window"] == "two_year"}
 
     rows = []
     for r in six:
         cid = r["candidate_id"]
         rank = sum(1 for x in six if (x.get("sharpe") or -999) > (r.get("sharpe") or -999)) + 1
+        t = two.get(cid, {})
         rows.append(
             "<tr>"
             f"<td class='num'>{rank}</td>"
@@ -47,6 +49,9 @@ def main() -> int:
             f"<td class='num'>{_num(r.get('sharpe'))}</td>"
             f"<td class='num'>{_pct(r.get('total_return'))}</td>"
             f"<td class='num'>{_pct(r.get('max_drawdown'))}</td>"
+            f"<td class='num'>{_num(t.get('sharpe'))}</td>"
+            f"<td class='num'>{_pct(t.get('total_return'))}</td>"
+            f"<td class='num'>{_pct(t.get('max_drawdown'))}</td>"
             "</tr>"
         )
     # per-fold selection (all cash) honesty table
@@ -131,9 +136,10 @@ only, not a deployable edge. No live or paper trading is implied.</div>
 <tbody>{''.join(fold_rows)}</tbody></table>
 </div>
 
-<div class="card"><h2>All 100 v2 candidates — six-year discovery (daily Sharpe)</h2>
-<table class="sortable"><thead><tr><th class="sortable num">#<span class="arrow"></span></th><th class="sortable">ID<span class="arrow"></span></th><th class="sortable num">Sharpe<span class="arrow"></span></th>
-<th class="sortable num">Return<span class="arrow"></span></th><th class="sortable num">Max DD<span class="arrow"></span></th></tr></thead>
+<div class="card"><h2>All 100 v2 candidates — six-year &amp; two-year discovery (daily Sharpe)</h2>
+<table class="sortable"><thead><tr><th class="sortable num">#<span class="arrow"></span></th><th class="sortable">ID<span class="arrow"></span></th><th class="sortable num">6y Sharpe<span class="arrow"></span></th>
+<th class="sortable num">6y Return<span class="arrow"></span></th><th class="sortable num">6y Max DD<span class="arrow"></span></th>
+<th class="sortable num">2y Sharpe<span class="arrow"></span></th><th class="sortable num">2y Return<span class="arrow"></span></th><th class="sortable num">2y Max DD<span class="arrow"></span></th></tr></thead>
 <tbody>{''.join(rows)}</tbody></table></div>
 
 <footer>Independently recomputed daily-return Sharpe from native LumiBot equity curves · 3.5 bps/side.
