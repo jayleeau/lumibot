@@ -25,7 +25,7 @@ if str(ROOT) not in sys.path:
 
 from strategy_lab.experiment_registry import get_registry  # noqa: E402
 from strategy_lab.experiment_validation import audit_run, reconcile_trades  # noqa: E402
-from strategy_lab.native_experiments import IMPLEMENTATION_REVISION, V2_FOLD_BLOCKS  # noqa: E402
+from strategy_lab.native_experiments import INITIAL_CASH, IMPLEMENTATION_REVISION, V2_FOLD_BLOCKS  # noqa: E402
 
 PRIMARY_COST_BPS = 3.5
 
@@ -79,7 +79,12 @@ def _daily_returns(run_dir: Path) -> pd.Series:
         .last()
         .astype("float64")
     )
-    return daily.pct_change().dropna()
+    returns = daily.pct_change()
+    if not returns.empty:
+        # Every walk-forward block starts independently from the native engine's
+        # fixed cash budget, so its first saved session is also a return.
+        returns.iloc[0] = daily.iloc[0] / INITIAL_CASH - 1.0
+    return returns.dropna()
 
 
 def _chained_metrics(out_dir: Path, candidate_id: str, blocks: Sequence[str]) -> dict[str, float]:

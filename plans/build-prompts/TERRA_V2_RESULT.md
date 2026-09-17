@@ -136,3 +136,47 @@ are repair evidence only, **not qualified performance**.
 | V082 | 2234 | +392.4422% | 734 | +331.2237% |
 | V099 | 2280 | +51.0005% | 868 | +74.5095% |
 | V100 | 1676 | -0.7811% | 624 | +5.6792% |
+
+## FIX 3 — Walk-Forward Chained-Metrics First-Session Accounting
+
+### Defect and Change
+
+The walk-forward evaluator previously formed each from-cash block's daily
+returns with `pct_change().dropna()`. That silently excluded the first saved
+session because it has no preceding equity-curve row, even though every native
+block starts at the fixed `$100,000` budget. Chained total return and
+max-drawdown therefore omitted every block's opening-session move.
+
+`scripts/evaluate_walk_forward.py` now imports the native engine's
+`INITIAL_CASH` (`$100,000`) and explicitly records the first return as
+`first_daily_equity / INITIAL_CASH - 1`. The existing inter-block transaction
+charge remains one separate multiplicative factor of
+`1 - 2 * PRIMARY_COST_BPS / 10_000`; it is not represented as an additional
+daily return.
+
+### Regression Coverage
+
+- `.venv/bin/python -m pytest tests/strategy_lab/ -q` — **119 passed**.
+- `tests/strategy_lab/test_evaluate_walk_forward.py` uses two synthetic
+  from-cash blocks with opening losses and subsequent gains. It asserts the
+  full product of both block factors and the one boundary-cost factor, checks
+  maximum drawdown includes the opening loss, and proves a one-session opening
+  loss is no longer reported as a flat block.
+
+### Post-Fix Evaluator Outcome
+
+Evaluator-only rerun (no native backtests):
+
+```bash
+.venv/bin/python scripts/evaluate_walk_forward.py \
+  --all-folds \
+  --out-dir reports/hts_v2_walkforward_2026-09-16_02
+```
+
+The new `walk_forward_report.json` selects cash on all six folds; each
+discovery lock has zero eligible candidates. The native implementation revision
+remains `hts-native-v2-2026-09-16-2`. Corrected f1 figures now match the full
+series: V048 chained total return is `-2.7672%` and chained maximum drawdown is
+`52.6102%`. V065's chained drawdown moves from the previously undercounted
+value to `35.0408%`, so it fails the `35%` drawdown gate. The overall outcome
+therefore remains zero eligible candidates and cash for every fold.
