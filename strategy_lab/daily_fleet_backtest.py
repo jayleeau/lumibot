@@ -121,7 +121,16 @@ PODHAJSKY_GAP3 = Spec(
     sleeve=3.0, stop=0.03, hold_days=1, rsi_exit=70.0, warmup=115, family="podhajsky_gap",
     elong=100, rsi_n=3, rsi_th=35.0, k_gap=0.002,
 )
-SPECS = {"meanrev_ema": MEANREV_EMA, "podhajsky_gap3": PODHAJSKY_GAP3}
+# meanrev_ema_3d (27aae2b1, dedicated paper account PA3R1ZNFYPHF). Identical
+# meanrev-ema entry (EMA150 uptrend pullback to EMA10, RSI3<25), 3-day hold
+# (~4 trading days), stop 2%, RSI2>80 exit, 3x leverage.
+MEANREV_EMA_3D = Spec(
+    name="meanrev_ema_3d", encoded="meanrev-ema-3d-s200-rsi-hi-2-80-l300",
+    sleeve=3.0, stop=0.02, hold_days=4, rsi_exit=80.0, warmup=165, family="meanrev_ema",
+    elong=150, efast=10, rsi_n=3, rsi_th=25.0,
+)
+SPECS = {"meanrev_ema": MEANREV_EMA, "podhajsky_gap3": PODHAJSKY_GAP3,
+         "meanrev_ema_3d": MEANREV_EMA_3D}
 
 
 def load_daily(symbols: list[str], start: str, end: str) -> dict[str, pd.DataFrame]:
