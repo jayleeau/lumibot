@@ -129,28 +129,36 @@ def _load_holdings(trades_path: Path) -> dict[str, float]:
     return {s: round(d["real"] - d["cst"], 2) for s, d in bysym.items()}
 
 
-def _build_one(entry: dict) -> None:
+def _build_one(entry: dict, variant: str = "base") -> None:
     cid = entry["candidate_id"]
-    # locate the wave dir that actually holds this candidate's six_year artifacts
-    six_dir = None
-    for wd in WAVE_DIRS.values():
-        cand = REPORTS / wd / cid / "six_year"
-        if (cand / "run_stats.csv").exists():
-            six_dir = cand
-            break
-    if six_dir is None:
-        print("WARN no six-year artifacts for", cid)
-        return None
-    two_dir = REPORTS / TWO_DIR / cid / "two_year"
+    if variant == "b":
+        suffix = "-b"
+        # soxl-free variants live under <cid>-b dirs
+        six_dir = REPORTS / "hts_v2_soxlfree_2026-09-17" / f"{cid}-b" / "six_year"
+        two_dir = REPORTS / "hts_v2_soxlfree_2026-09-17" / f"{cid}-b" / "two_year"
+        EW = REPORTS / "hts_v2_soxlfree_extrawindows_2026-09-18" / f"{cid}-b-ew"
+        title_cid = f"{cid}-b"
+    else:
+        variant = "base"; suffix = ""
+        six_dir = None
+        for wd in WAVE_DIRS.values():
+            cand = REPORTS / wd / cid / "six_year"
+            if (cand / "run_stats.csv").exists():
+                six_dir = cand
+                break
+        if six_dir is None:
+            print("WARN no six-year artifacts for", cid)
+            return None
+        two_dir = REPORTS / TWO_DIR / cid / "two_year"
+        EW = REPORTS / "hts_v2_extrawindows_2026-09-18" / f"{cid}-ew"
+        title_cid = cid
 
     d6, e6, dd6 = _load_equity(six_dir / "run_stats.csv")
     d2, e2, dd2 = _load_equity(two_dir / "run_stats.csv")
     h6 = _load_holdings(six_dir / "run_trades.csv")
     h2 = _load_holdings(two_dir / "run_trades.csv")
 
-    # 2018->2022 (early) and 2022->2024 windows from the extra-windows runner
-    # (the runner names candidate dirs with an -ew suffix)
-    EW = REPORTS / "hts_v2_extrawindows_2026-09-18" / f"{cid}-ew"
+    # 2018->2022 (early) and 2022->2024 windows
     d_early, e_early, dd_early = _load_equity(EW / "early" / "run_stats.csv")
     d_2224, e_2224, dd_2224 = _load_equity(EW / "y2022_2024" / "run_stats.csv")
     # holdings over time (6y path, carry-forward notional per symbol)
@@ -159,9 +167,10 @@ def _build_one(entry: dict) -> None:
     # metrics table
     six_rank = ""  # filled by caller optionally
     params = entry.get("params", {})
+    soxl_badge = "<span class='badge'>SOXL-free</span>" if variant == "b" else ""
     rows_html = "\n".join(
         f"<tr><td class='k'>{k}</td><td>{html_esc(str(v))}</td></tr>" for k, v in [
-            ("Candidate", cid), ("Family", params.get("family_id", "")),
+            ("Candidate", title_cid), ("Family", params.get("family_id", "")),
             ("6y Sharpe", _num(entry.get("sharpe"))), ("6y Return", _fmt_pct(entry.get("total_return"))),
             ("6y Max DD", _fmt_pct(entry.get("max_drawdown"))), ("6y Fills", entry.get("fills")),
         ]
@@ -185,7 +194,7 @@ def _build_one(entry: dict) -> None:
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow,noarchive">
-<title>{cid} — top-20 graph</title>
+<title>{title_cid} — top-20 graph</title>
 {ECHART_CDN}
 <style>
 :root{{--bg:#0D0F12;--card:#161920;--border:#262933;--green:#22C55E;--red:#EF4444;--muted:#8A91A0;--text:#E5E7EB}}
@@ -198,7 +207,7 @@ td.k{{color:var(--muted);width:150px}}
 .muted{{color:var(--muted);font-size:12px}} .warn{{background:#2a1f10;border:1px solid #8a5a1a;border-radius:8px;padding:10px 14px;color:#f0c674;font-size:13px;margin-bottom:16px}}
 footer{{color:var(--muted);font-size:11px;margin-top:8px}}
 </style></head><body><div class="wrap">
-<h1>{cid} — top-20 strategy graphs</h1>
+<h1>{title_cid} — top-20 strategy graphs {soxl_badge}</h1>
 <div class="sub">Discovery/retrospective only · native LumiBot engine · <b>noindex</b></div>
 <div class="warn"><b>Not a deployable edge.</b> Discovery rankings; our walk-forward gate selected cash. LumiBot's built-in tearsheet can't render hourly data, so this audited-native-data page is used instead.</div>
 <div class="card"><table>{rows_html}
@@ -289,13 +298,50 @@ if (window.PL_6y) mkHold('h_6y', window.PL_6y.names, window.PL_6y.vals);
 if (window.PL_2y) mkHold('h_2y', window.PL_2y.names, window.PL_2y.vals);
 </script>
 </div></body></html>"""
-    (OUT / f"{cid}_graphs.html").write_text(doc, encoding="utf-8")
+    (OUT / f"{title_cid}_graphs.html").write_text(doc, encoding="utf-8")
     return len(doc)
+
+
+def _wind_lookup(jsonl_loader_windows):
+    """Build {(cid, window): record} from an already-split source list."""
+    return {(r["candidate_id"], r["window"]): r for r in jsonl_loader_windows}
+
+
+def _gw(lut, cid, window):
+    rec = lut.get((cid, window))
+    return rec
+
+
+def _list_row(i, cid, rel, base_or_b):
+    """Build one <tr>. `rel` is the (cid, window) lookup for the current variant."""
+    def g(window):
+        return _gw(rel, cid, window) or {}
+    s6 = g("six_year").get("sharpe"); r6 = g("six_year").get("total_return"); d6 = g("six_year").get("max_drawdown")
+    s2 = g("two_year").get("sharpe"); r2 = g("two_year").get("total_return"); d2 = g("two_year").get("max_drawdown")
+    se = g("early").get("sharpe"); re_ = g("early").get("total_return")
+    sy = g("y2022_2024").get("sharpe"); ry = g("y2022_2024").get("total_return")
+    badge = "<span class='badge'>(no SOXL)</span>" if base_or_b == "b" else ""
+    return (
+        "<tr><td class='num'>{}</td><td><a href='{}_graphs.html'><b>{}{}</b></a></td>"
+        "<td class='num'>{}</td><td class='num'>{}</td><td class='num'>{}</td>"
+        "<td class='num'>{}</td><td class='num'>{}</td><td class='num'>{}</td>"
+        "<td class='num'>{}</td><td class='num'>{}</td>"
+        "<td class='num'>{}</td><td class='num'>{}</td><td class='num'></td></tr>".format(
+            i, cid, cid, badge,
+            _num(s6), _fmt_pct(r6), _fmt_pct(d6),
+            _num(s2), _fmt_pct(r2), _fmt_pct(d2),
+            _num(se), _fmt_pct(re_),
+            _num(sy), _fmt_pct(ry)))
 
 
 def html_esc(s):
     import html
     return html.escape(s)
+
+
+def _load_jsonl(rel: str) -> list[dict]:
+    p = REPORTS / rel
+    return [json.loads(l) for l in open(p)] if p.exists() else []
 
 
 def main() -> int:
@@ -304,29 +350,43 @@ def main() -> int:
     # the merged list holds six-year entries; attach 2-year metrics from two_top
     two = {r["candidate_id"]: r for r in merged["two_top"]}
     entries = list(merged["merged"])
+
+    # Per-variant (cid, window) metric lookups
+    base_lut = _wind_lookup(
+        _load_jsonl("hts_v2_extrawindows_2026-09-18/search_results_extrawindows.jsonl"))
+    b_lut = _wind_lookup(
+        _load_jsonl("hts_v2_soxlfree_extrawindows_2026-09-18/search_results_soxlfree_extrawindows.jsonl"))
+    b6_lut = _wind_lookup(
+        _load_jsonl("hts_v2_soxlfree_2026-09-17/search_results_soxlfree.jsonl"))
+
     built = 0
     for e in entries:
         t = two.get(e["candidate_id"], {})
         e["sharpe_2y"] = t.get("sharpe"); e["total_return_2y"] = t.get("total_return"); e["max_drawdown_2y"] = t.get("max_drawdown")
-        size = _build_one(e)
-        if size is None:
-            print("skipped", e["candidate_id"])
-            continue
-        built += 1
-        print(f"built {e['candidate_id']} ({size} bytes)")
-    # list page
+        # base + soxl-free variant graph pages
+        for variant in ("base", "b"):
+            size = _build_one(e, variant=variant)
+            if size is None:
+                print("skipped", e["candidate_id"], variant)
+                continue
+            built += 1
+            print(f"built {e['candidate_id']}{'-b' if variant=='b' else ''} ({size} bytes)")
+
+    # list page: base rows then -b rows
     rows = []
     for i, e in enumerate(entries, 1):
-        t = two.get(e["candidate_id"], {})
-        both = "yes" if e["candidate_id"] in merged["shared"] else ""
-        rows.append(
-            "<tr><td class='num'>{}</td><td><a href='{}_graphs.html'><b>{}</b></a></td>"
-            "<td class='num'>{}</td><td class='num'>{}</td><td class='num'>{}</td>"
-            "<td class='num'>{}</td><td class='num'>{}</td><td class='num'>{}</td><td>{}</td></tr>".format(
-                i, e["candidate_id"], e["candidate_id"],
-                _num(e.get("sharpe")), _fmt_pct(e.get("total_return")), _fmt_pct(e.get("max_drawdown")),
-                _num(t.get("sharpe")), _fmt_pct(t.get("total_return")), _fmt_pct(t.get("max_drawdown")),
-                both))
+        cid = e["candidate_id"]
+        base_lut[(cid, "six_year")] = e  # 6y metrics live on the merged entry
+        base_lut[(cid, "two_year")] = two.get(cid, {})
+        rows.append(_list_row(i, cid, base_lut, "base"))
+    bi = len(entries) + 1
+    for e in entries:
+        cid = e["candidate_id"]
+        # -b variant rows: their own 6y/2y (b6_lut) + their early/2022-24 (b_lut)
+        b_lut[(cid, "six_year")] = b6_lut.get((cid, "six_year"), {})
+        b_lut[(cid, "two_year")] = b6_lut.get((cid, "two_year"), {})
+        rows.append(_list_row(bi, f"{cid}-b", b_lut, "b"))
+        bi += 1
     idx = f"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="robots" content="noindex,nofollow,noarchive"><title>HTS v2 — Top-20 (6y &times; 2y)</title>
 <style>body{{background:#0D0F12;color:#E5E7EB;font-family:Inter,sans-serif;padding:24px}}
@@ -362,13 +422,14 @@ document.addEventListener("DOMContentLoaded", function () {{
   }});
 }});
 </script></head><body>
-<h1>HTS v2 — Top-20 strategies (6-year &times; 2-year)</h1>
-<div class="muted">Discovery/retrospective only · native LumiBot engine · 3.5 bps/side · noindex · click a strategy for its graphs · click a column header to sort</div>
+<h1>HTS v2 — top-20 providers &amp; SOXL-free (-b) variants</h1>
+<div class="muted">Discovery/retrospective only · native LumiBot engine · 3.5 bps/side · noindex · click a strategy for its graphs · click a column header to sort · <b>(no SOXL)</b> rows are the same recipe with SOXL removed from the universe</div>
 <table class="sortable"><thead><tr>
 <th class="sortable num">#<span class="arrow"></span></th><th class="sortable">ID<span class="arrow"></span></th><th class="sortable num">6y Sharpe<span class="arrow"></span></th><th class="sortable num">6y Return<span class="arrow"></span></th><th class="sortable num">6y MaxDD<span class="arrow"></span></th>
-<th class="sortable num">2y Sharpe<span class="arrow"></span></th><th class="sortable num">2y Return<span class="arrow"></span></th><th class="sortable num">2y MaxDD<span class="arrow"></span></th><th class="sortable">Both?<span class="arrow"></span></th>
+<th class="sortable num">2y Sharpe<span class="arrow"></span></th><th class="sortable num">2y Return<span class="arrow"></span></th><th class="sortable num">2y MaxDD<span class="arrow"></span></th>
+<th class="sortable num">2018-22 Sharpe<span class="arrow"></span></th><th class="sortable num">2018-22 Return<span class="arrow"></span></th>
+<th class="sortable num">2022-24 Sharpe<span class="arrow"></span></th><th class="sortable num">2022-24 Return<span class="arrow"></span></th>
 </tr></thead><tbody>{''.join(rows)}</tbody></table>
-<div class="muted" style="margin-top:10px">'Both?' = appears in both six-year and two-year top-20 lists.</div>
 </body></html>"""
     (OUT / "index.html").write_text(idx, encoding="utf-8")
     print("wrote", OUT / "index.html", "| built", built, "graph pages")
