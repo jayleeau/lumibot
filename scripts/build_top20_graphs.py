@@ -50,12 +50,61 @@ def _load_equity(path: Path) -> tuple[list, list, list]:
     peak = norm.cummax()
     dd = (norm / peak - 1.0) * 100.0
     dates = list(daily.index)
-    # sample to ~300
-    if len(dates) > 300:
-        stride = len(dates) // 300
-        dates = dates[::stride]; norm = norm.iloc[::stride]; dd = dd.reindex(norm.index, method="ffill") if False else dd
-        norm = norm[::stride]; dd = dd[::stride]
-    return dates, [round(v, 4) for v in norm], [round(v, 3) for v in dd]
+    values = list(norm)
+    ddvals = list(dd)
+    # sample to ~300 (consistent positions across dates/equity/drawdown)
+    if len(values) > 300:
+        stride = len(values) // 300
+        dates = dates[::stride]; values = values[::stride]; ddvals = ddvals[::stride]
+    return dates, [round(v, 4) for v in values], [round(x, 3) for x in ddvals]
+
+
+def _load_holdings_over_time(trades_path: Path, max_pts: int = 300) -> tuple[list, list]:
+    """Return (dates, list_of_{symbol: value_t}) of mark-to-market gross exposure.
+
+    Reconstructs per-symbol net position held over time from run_trades.csv fills
+    and marks each holding carry-forward at its last fill price. Returns the
+    cumulative per-symbol notional at sampled points (a holdings-over-time path).
+    """
+    if not trades_path.exists():
+        return [], []
+    tr = pd.read_csv(trades_path)
+    fills = tr[(tr["status"].astype(str).str.lower() == "fill")] if "status" in tr else tr
+    if fills.empty or "time" not in fills:
+        return [], []
+    fills = fills.sort_values("time")
+    ts = pd.to_datetime(fills["time"], utc=True)
+    times = list(ts)
+    # build running position/book
+    pos: dict[str, float] = {}
+    book: dict[str, float] = {}
+    points: list[tuple[pd.Timestamp, dict[str, float]]] = []
+    for i, (_, row) in enumerate(fills.iterrows()):
+        s = str(row["symbol"]); side = str(row["side"]).lower()
+        qty = float(pd.to_numeric(row.get("filled_quantity"), errors="coerce") or 0.0)
+        px = float(pd.to_numeric(row.get("price"), errors="coerce") or 0.0)
+        if qty <= 0 or px <= 0:
+            continue
+        if side == "buy":
+            pos[s] = pos.get(s, 0.0) + qty
+            book[s] = px
+        else:
+            pos[s] = pos.get(s, 0.0) - qty
+            book[s] = px
+        if pos.get(s, 0.0) <= 1e-12:
+            pos.pop(s, None)
+        # snapshot notional of current holdings
+        snapshot = {s2: round(pos[s2] * book[s2], 2) for s2 in pos}
+        points.append((times[i], snapshot))
+    if not points:
+        return [], []
+    # sample to max_pts
+    if len(points) > max_pts:
+        stride = len(points) // max_pts
+        points = points[::stride]
+    dates = [pts.strftime("%Y-%m-%d") for pts, _ in points]
+    series = [{s: v for s, v in snapshot.items()} for _, snapshot in points]
+    return dates, series
 
 
 def _load_holdings(trades_path: Path) -> dict[str, float]:
@@ -98,6 +147,14 @@ def _build_one(entry: dict) -> None:
     d2, e2, dd2 = _load_equity(two_dir / "run_stats.csv")
     h6 = _load_holdings(six_dir / "run_trades.csv")
     h2 = _load_holdings(two_dir / "run_trades.csv")
+
+    # 2018->2022 (early) and 2022->2024 windows from the extra-windows runner
+    # (the runner names candidate dirs with an -ew suffix)
+    EW = REPORTS / "hts_v2_extrawindows_2026-09-18" / f"{cid}-ew"
+    d_early, e_early, dd_early = _load_equity(EW / "early" / "run_stats.csv")
+    d_2224, e_2224, dd_2224 = _load_equity(EW / "y2022_2024" / "run_stats.csv")
+    # holdings over time (6y path, carry-forward notional per symbol)
+    hot_dates, hot_series = _load_holdings_over_time(six_dir / "run_trades.csv")
 
     # metrics table
     six_rank = ""  # filled by caller optionally
@@ -158,12 +215,18 @@ footer{{color:var(--muted);font-size:11px;margin-top:8px}}
 
 <div class="card"><h2>6-year equity &amp; drawdown</h2><div id="c6" style="width:100%;height:360px"></div></div>
 <div class="card"><h2>2-year equity &amp; drawdown</h2><div id="c2" style="width:100%;height:360px"></div></div>
+<div class="card"><h2>2018&ndash;2022 return &amp; drawdown</h2><div id="ce" style="width:100%;height:360px"></div><p class="muted">2018-05-01 &#8594; 2021-12-31 (data begins 2018-05; no pre-window warmup)</p></div>
+<div class="card"><h2>2022&ndash;2024 return &amp; drawdown</h2><div id="c2224" style="width:100%;height:360px"></div><p class="muted">2022-01-01 &#8594; 2024-12-31 (2022 bear, 2023 grind, 2024 recovery)</p></div>
+<div class="card"><h2>Holdings over time — 6-year (gross notional per symbol)</h2><div id="ht" style="width:100%;height:420px"></div><p class="muted">Carry-forward position notional marked at last fill price; top symbols only.</p></div>
 <div class="card"><h2>Holdings — 6-year (per-symbol net PnL)</h2>{_holdings_html(h6, "6y")}</div>
 <div class="card"><h2>Holdings — 2-year (per-symbol net PnL)</h2>{_holdings_html(h2, "2y")}</div>
 <footer>Generated from run_stats.csv + run_trades.csv (native LumiBot backtest artifacts). Crawlers blocked.</footer>
 <script>
 var D6 = {json.dumps(d6 or [])}, E6 = {json.dumps(e6 or [])}, DD6 = {json.dumps(dd6 or [])};
 var D2 = {json.dumps(d2 or [])}, E2 = {json.dumps(e2 or [])}, DD2 = {json.dumps(dd2 or [])};
+var DE = {json.dumps(d_early or [])}, EE = {json.dumps(e_early or [])}, DDE = {json.dumps(dd_early or [])};
+var D4 = {json.dumps(d_2224 or [])}, E4 = {json.dumps(e_2224 or [])}, DD4 = {json.dumps(dd_2224 or [])};
+var HT_D = {json.dumps(hot_dates or [])}, HT_X = {json.dumps(hot_series or [])};
 function mkChart(el, dates, eq, dd) {{
   var c = echarts.init(document.getElementById(el));
   c.setOption({{
@@ -190,8 +253,38 @@ function mkHold(el, names, vals) {{
   }});
   window.addEventListener('resize', function(){{c.resize();}});
 }}
+function mkHoldTime(el, dates, series) {{
+  var c = echarts.init(document.getElementById(el));
+  var syms = {{}};
+  series.forEach(function (s) {{ Object.keys(s).forEach(function (k) {{ syms[k] = 1; }}); }});
+  var all = Object.keys(syms);
+  var top = all.sort(function (a, b) {{
+    var sa = 0, sb = 0;
+    series.forEach(function (s) {{ sa += s[a] || 0; }});
+    series.forEach(function (s) {{ sb += s[b] || 0; }});
+    return sb - sa;
+  }});
+  var keep = top.slice(0, 12);
+  var seriesJS = keep.map(function (sym, i) {{
+    var data = series.map(function (s) {{ return s[sym] || 0; }});
+    var palette = ['#22C55E','#3B82F6','#F59E0B','#EF4444','#8B5CF6','#14B8A6','#EC4899','#84CC16','#F97316','#0EA5E9','#A3E635','#E11D48'];
+    return {{ name: sym, type: 'line', stack: 'h', areaStyle: {{opacity:0.7}}, lineStyle: {{width:0}}, data: data.map(function(v){{return Math.round(v);}}), itemStyle:{{color:palette[i%palette.length]}} }};
+  }});
+  c.setOption({{
+    tooltip: {{trigger:'axis', backgroundColor:'#1E232B', borderColor:'#262933', textStyle:{{color:'#FFF',fontSize:12}}}},
+    legend: {{type:'scroll', bottom:0, textStyle:{{color:'#8A91A0',fontSize:10}}}},
+    grid: {{left:70, right:20, top:40, bottom:70}},
+    xAxis: {{type:'category', data:dates, axisLabel:{{color:'#8A91A0', fontSize:10}}}},
+    yAxis: {{type:'value', axisLabel:{{color:'#8A91A0'}}, splitLine:{{lineStyle:{{color:'#262933'}}}}}},
+    series: seriesJS
+  }});
+  window.addEventListener('resize', function(){{c.resize();}});
+}}
 if (D6.length) mkChart('c6', D6, E6, DD6);
 if (D2.length) mkChart('c2', D2, E2, DD2);
+if (DE.length) mkChart('ce', DE, EE, DDE);
+if (D4.length) mkChart('c2224', D4, E4, DD4);
+if (HT_D.length && HT_X.length) mkHoldTime('ht', HT_D, HT_X);
 if (window.PL_6y) mkHold('h_6y', window.PL_6y.names, window.PL_6y.vals);
 if (window.PL_2y) mkHold('h_2y', window.PL_2y.names, window.PL_2y.vals);
 </script>

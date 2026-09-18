@@ -142,7 +142,18 @@ WINDOW_TWO_YEAR = ExperimentWindow("two_year", "2024-09-08", "2026-09-08")
 # warmup history before it; short-indicator strategies warm up within the window,
 # but SMA200 / vol-covariance(60) / liquidity(63) signals are partial early on.
 WINDOW_PRE_2020 = ExperimentWindow("pre_2020", "2018-05-01", "2020-04-30")
-WINDOWS: tuple[ExperimentWindow, ...] = (WINDOW_SIX_YEAR, WINDOW_TWO_YEAR, WINDOW_PRE_2020)
+# 2022-01-01 -> 2024-12-31: a distinct mid-cycle regime (2022 bear, 2023 grind,
+# 2024 recovery). Warmup_start (2020-08) is inside the 2018-May archive, so SMA200 /
+# vol-cov(60) / liquidity(63) all have full pre-history -- no edge-of-data gap.
+WINDOW_2022_2024 = ExperimentWindow("y2022_2024", "2022-01-01", "2024-12-31")
+# 2018-05-01 -> 2021-12-31 (data begins 2018-05): early regime = 2018 H2 selloff,
+# 2019, 2020 COVID crash + recovery, 2021 bull. Paired with y2022_2024 it splits
+# pre-2025 history into two comparable multi-year windows for the graph pages.
+WINDOW_EARLY = ExperimentWindow("early", "2018-05-01", "2021-12-31")
+WINDOWS: tuple[ExperimentWindow, ...] = (
+    WINDOW_SIX_YEAR, WINDOW_TWO_YEAR, WINDOW_PRE_2020, WINDOW_2022_2024,
+    WINDOW_EARLY,
+)
 
 # Retrospective walk-forward fold schedule (plan Phase 4).  Six rolling outer
 # folds; each fold has a discovery interval, two inner-validation sub-windows
