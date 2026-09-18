@@ -18,9 +18,13 @@ U0_UNLEVERAGED = "U0_UNLEVERAGED"
 U0_EX_CRYPTO = "U0_EX_CRYPTO"
 SECTOR_ONLY = "SECTOR_ONLY"
 DIVERSIFIED_CORE = "DIVERSIFIED_CORE"
+# SOXL-free U0: every U0 member except the 3x semiconductor ETF. Used by the
+# "-b" SOXL-dependence study so a candidate's edge can be judged without the
+# dominant single name in the universe.
+U0_EX_SOXL = "U0_EX_SOXL"
 
 UNIVERSE_KEYWORDS: tuple[str, ...] = (
-    U0, U0_UNLEVERAGED, U0_EX_CRYPTO, SECTOR_ONLY, DIVERSIFIED_CORE,
+    U0, U0_UNLEVERAGED, U0_EX_CRYPTO, SECTOR_ONLY, DIVERSIFIED_CORE, U0_EX_SOXL,
 )
 
 # Plan section 5, H091/H095: verify issuer metadata before using these.
@@ -83,6 +87,8 @@ def resolve_universe(keyword: str) -> tuple[str, ...]:
         return _without(_default_universe(), (*LEVERAGED_PRODUCTS, "MSTR", "COIN"))
     if keyword == U0_EX_CRYPTO:
         return _without(_default_universe(), CRYPTO_LINKED)
+    if keyword == U0_EX_SOXL:
+        return _without(_default_universe(), ("SOXL",))
     if keyword == SECTOR_ONLY:
         return SECTOR_ONLY_SYMBOLS
     if keyword == DIVERSIFIED_CORE:
