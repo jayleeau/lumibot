@@ -136,7 +136,13 @@ class ExperimentWindow:
 
 WINDOW_SIX_YEAR = ExperimentWindow("six_year", "2020-09-08", "2026-09-08")
 WINDOW_TWO_YEAR = ExperimentWindow("two_year", "2024-09-08", "2026-09-08")
-WINDOWS: tuple[ExperimentWindow, ...] = (WINDOW_SIX_YEAR, WINDOW_TWO_YEAR)
+# Pre-2020 out-of-sample window (2018-05-01 -> 2020-04-30): a long-before-current
+# regime covering the 2018 H2 selloff, 2019, and the start of the 2020 COVID crash.
+# NOTE: the archives begin exactly at the window start, so there is NO 500-day
+# warmup history before it; short-indicator strategies warm up within the window,
+# but SMA200 / vol-covariance(60) / liquidity(63) signals are partial early on.
+WINDOW_PRE_2020 = ExperimentWindow("pre_2020", "2018-05-01", "2020-04-30")
+WINDOWS: tuple[ExperimentWindow, ...] = (WINDOW_SIX_YEAR, WINDOW_TWO_YEAR, WINDOW_PRE_2020)
 
 # Retrospective walk-forward fold schedule (plan Phase 4).  Six rolling outer
 # folds; each fold has a discovery interval, two inner-validation sub-windows
@@ -1799,7 +1805,10 @@ def _position_pnl_records(
         state = terminal.get(symbol)
         if state is None or inputs is None:
             continue
-        frame = inputs.hourly.get(symbol)
+        # Alternatives carry a daily-only inputs object (no hourly array); the
+        # terminal mark needs whichever cadence the candidate actually traded.
+        mark_frame = getattr(inputs, "hourly", None) or getattr(inputs, "daily", None)
+        frame = (mark_frame or {}).get(symbol) if mark_frame else None
         if frame is None or frame.empty:
             continue
         before_end = frame.loc[:pd.Timestamp(window.end) + pd.Timedelta(hours=15)]
