@@ -240,12 +240,40 @@ def main() -> int:
 h1{{font-size:22px}} a{{color:#22C55E;text-decoration:none}} a:hover{{text-decoration:underline}}
 table{{border-collapse:collapse;margin-top:12px}} th,td{{border-bottom:1px solid #262933;padding:7px 12px;font-size:13px;text-align:left}}
 th{{color:#8A91A0}} td.num{{font-variant-numeric:tabular-nums}} .muted{{color:#8A91A0;font-size:12px}}
-.badge{{color:#F59E0B;font-size:11px}}</style></head><body>
+.badge{{color:#F59E0B;font-size:11px}}
+th.sortable{{cursor:pointer;user-select:none}} th.sortable:hover{{color:#E5E7EB}}
+th.sortable .arrow{{color:#8A91A0;font-size:10px;margin-left:4px}}
+</style>
+<script>
+document.addEventListener("DOMContentLoaded", function () {{
+  var table = document.querySelector("table.sortable");
+  var headers = table.querySelectorAll("th.sortable");
+  headers.forEach(function (th, idx) {{
+    th.addEventListener("click", function () {{
+      var rows = Array.prototype.slice.call(table.querySelectorAll("tbody tr"));
+      var dir = th.dataset.dir === "asc" ? "desc" : "asc";
+      th.dataset.dir = dir;
+      headers.forEach(function (h) {{ h.querySelector(".arrow").textContent = ""; }});
+      th.querySelector(".arrow").textContent = dir === "asc" ? "\u25b2" : "\u25bc";
+      var numFirst = th.classList.contains("num");
+      rows.sort(function (a, b) {{
+        var av = a.cells[idx].innerText.trim().replace(/[%$#,]/g, "");
+        var bv = b.cells[idx].innerText.trim().replace(/[%$#,]/g, "");
+        if (numFirst) {{ av = parseFloat(av) || -Infinity; bv = parseFloat(bv) || -Infinity; }}
+        else {{ av = av.toLowerCase(); bv = bv.toLowerCase(); }}
+        var cmp = av < bv ? -1 : av > bv ? 1 : 0;
+        return dir === "asc" ? cmp : -cmp;
+      }});
+      rows.forEach(function (r) {{ table.querySelector("tbody").appendChild(r); }});
+    }});
+  }});
+}});
+</script></head><body>
 <h1>HTS v2 — Top-20 strategies (6-year &times; 2-year)</h1>
-<div class="muted">Discovery/retrospective only · native LumiBot engine · 3.5 bps/side · noindex · click a strategy for its graphs</div>
-<table><thead><tr>
-<th class="num">#</th><th>ID</th><th class="num">6y Sharpe</th><th class="num">6y Return</th><th class="num">6y MaxDD</th>
-<th class="num">2y Sharpe</th><th class="num">2y Return</th><th class="num">2y MaxDD</th><th>Both?</th>
+<div class="muted">Discovery/retrospective only · native LumiBot engine · 3.5 bps/side · noindex · click a strategy for its graphs · click a column header to sort</div>
+<table class="sortable"><thead><tr>
+<th class="sortable num">#<span class="arrow"></span></th><th class="sortable">ID<span class="arrow"></span></th><th class="sortable num">6y Sharpe<span class="arrow"></span></th><th class="sortable num">6y Return<span class="arrow"></span></th><th class="sortable num">6y MaxDD<span class="arrow"></span></th>
+<th class="sortable num">2y Sharpe<span class="arrow"></span></th><th class="sortable num">2y Return<span class="arrow"></span></th><th class="sortable num">2y MaxDD<span class="arrow"></span></th><th class="sortable">Both?<span class="arrow"></span></th>
 </tr></thead><tbody>{''.join(rows)}</tbody></table>
 <div class="muted" style="margin-top:10px">'Both?' = appears in both six-year and two-year top-20 lists.</div>
 </body></html>"""
