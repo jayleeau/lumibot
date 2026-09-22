@@ -1,0 +1,12 @@
+# UNSUCCESSFULLY RESOLVED ON 2026-09-22.
+#
+# pip-tools==7.5.1 could not be installed on the target machine because the
+# package index was unreachable (DNS failure).  This file is intentionally a
+# non-installable evidence stub rather than a silently upgraded or fabricated
+# closure.  Re-run the exact command-group-B compile on a network-enabled
+# machine before attempting a real model run.
+#
+# The only artifact hash independently verified before the network failure is
+# the pinned laya wheel hash from PyPI metadata.
+laya==0.3.5 \
+    --hash=sha256:4c57f64cbaf893bb5c7b4affddc2bf21a819f55df51941689f11868583be2903

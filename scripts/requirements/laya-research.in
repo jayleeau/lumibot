@@ -1,0 +1,12 @@
+# Optional, isolated Task 0b environment only.  Do not install these into
+# LumiBot's ordinary .venv and do not install LumiBot into .venv-laya.
+laya==0.3.5
+torch==2.8.0
+transformers==5.0.0
+safetensors==0.6.2
+huggingface_hub==1.1.2
+numpy==2.3.3
+pandas==2.3.3
+pyarrow==21.0.0
+scipy==1.16.2
+pytest==8.4.2

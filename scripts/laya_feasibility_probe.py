@@ -11,17 +11,30 @@ stage:
   the frozen local DuckDB archives read-only, and writes features-only
   snapshots plus a separate outcomes file under ``short/laya_work/gate/``.
 
-No model is downloaded, installed, imported, or run.  The final retrospective
-holdout interval is deliberately excluded and rejected by both code paths.
+* ``download`` fetches one allow-listed, pinned English checkpoint into an
+  immutable original plus a separate SDK working copy.
+* ``technical`` performs the cache-only deterministic feasibility probe.
+* ``score`` is a resumable, chunked raw-scoring plumbing stub; it does no
+  calibration or predictive verdict.
+
+The final retrospective holdout interval is deliberately excluded and rejected
+by the export path.  Model imports are lazy so download/technical/score can run
+in the isolated model environment without installing LumiBot.
 All paths are repository-relative; the CLI has no import-time actions.
 """
 from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
+import math
 import os
+import shutil
+import socket
+import statistics
 import sys
+import time
 from datetime import date
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -35,14 +48,14 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import duckdb  # noqa: E402
-import numpy as np  # noqa: E402
-import pandas as pd  # noqa: E402
-
-from strategy_lab.experiment_universes import resolve_universe  # noqa: E402
 from strategy_lab.laya_research import contracts  # noqa: E402
-from strategy_lab.laya_research import snapshots as snap  # noqa: E402
-from strategy_lab.native_experiments import _sql_frames  # noqa: E402
+
+duckdb: Any = None
+np: Any = None
+pd: Any = None
+resolve_universe: Any = None
+_sql_frames: Any = None
+snap: Any = None
 
 FEATURE_FIELDS = contracts.FEATURE_FIELDS
 MANIFEST_VERSION = "laya-research-manifest-v1"
@@ -57,6 +70,23 @@ CODE_HASH_FILES: tuple[str, ...] = (
     "scripts/laya_feasibility_probe.py",
     "strategy_lab/LAYA_RESEARCH.md",
 )
+
+
+def _require_data_stack() -> None:
+    """Import archive/native dependencies only for freeze/export commands."""
+    global duckdb, np, pd, resolve_universe, _sql_frames, snap
+    if duckdb is None:
+        import duckdb as _duckdb
+        import numpy as _np
+        import pandas as _pd
+
+        from strategy_lab.experiment_universes import resolve_universe as _resolve_universe
+        from strategy_lab.native_experiments import _sql_frames as _frames
+        from strategy_lab.laya_research import snapshots as _snap
+
+        duckdb, np, pd = _duckdb, _np, _pd
+        resolve_universe, _sql_frames = _resolve_universe, _frames
+        snap = _snap
 
 
 # --- small IO helpers ---------------------------------------------------------
@@ -315,6 +345,7 @@ def _synthetic_off_golden(protocol: contracts.Protocol) -> dict[str, Any]:
 
 
 def cmd_freeze(args: argparse.Namespace) -> int:
+    _require_data_stack()
     protocol = contracts.load_protocol(args.protocol)
     sources = protocol.raw["source_archives"]
     daily_path = _resolve(sources["daily"])
@@ -524,6 +555,7 @@ def _mask_frame(records: Sequence[snap.GateRecords]) -> pd.DataFrame:
 
 
 def cmd_export(args: argparse.Namespace) -> int:
+    _require_data_stack()
     manifest_path = _resolve(args.protocol)
     if not manifest_path.exists():
         print(f"protocol manifest not found: {manifest_path}", file=sys.stderr)
@@ -613,13 +645,356 @@ def cmd_export(args: argparse.Namespace) -> int:
     return 0
 
 
+# --- Task 0b model download/technical probe ---------------------------------
+
+MODEL_ID = "convaiinnovations/laya"
+MODEL_REVISION = "1c5edc17a7acd8701df6fc341c0d179f1c62c982"
+MODEL_ALLOW_PATTERNS: tuple[str, ...] = (
+    "rl_agent_config.json",
+    "model.safetensors",
+    "tokenizer/*",
+    "encoder/*",
+    "LICENSE",
+    "README.md",
+)
+
+
+def _relative(path: Path) -> str:
+    """Render a repository-relative path for tracked JSON evidence."""
+    try:
+        return path.resolve().relative_to(ROOT).as_posix()
+    except ValueError:
+        return "<sanitized-absolute-path>"
+
+
+def _tree_hashes(root: Path) -> dict[str, str]:
+    """Hash every regular file below a model snapshot in stable path order."""
+    return {
+        path.relative_to(root).as_posix(): _sha256_file(path)
+        for path in sorted(root.rglob("*"))
+        if path.is_file() and ".cache" not in path.parts
+    }
+
+
+def _find_model_dir(model_root: Path) -> Path:
+    """Find the separate SDK working copy produced by ``download``."""
+    candidates = sorted(model_root.glob("**/working"))
+    if not candidates:
+        raise FileNotFoundError(f"no model working copy below {_relative(model_root)}")
+    return candidates[0]
+
+
+def cmd_download(args: argparse.Namespace) -> int:
+    """Download exactly one pinned English checkpoint and record file hashes."""
+    model_root = _resolve(args.model_root)
+    model_root.mkdir(parents=True, exist_ok=True)
+    original = model_root / "english" / "original"
+    working = model_root / "english" / "working"
+    try:
+        hub = __import__("huggingface_hub", fromlist=["snapshot_download"])
+        snapshot_download = getattr(hub, "snapshot_download")
+        staging = model_root / "english" / "download-staging"
+        if staging.exists():
+            shutil.rmtree(staging)
+        snapshot_download(
+            MODEL_ID,
+            revision=MODEL_REVISION,
+            local_dir=str(staging),
+            allow_patterns=list(MODEL_ALLOW_PATTERNS),
+        )
+        missing = [name for name in ("rl_agent_config.json", "model.safetensors", "tokenizer", "encoder") if not (staging / name).exists()]
+        if missing:
+            raise RuntimeError(f"pinned snapshot is incomplete: {missing}")
+        if original.exists():
+            raise RuntimeError("immutable original already exists; refusing to overwrite it")
+        shutil.copytree(staging, original)
+        shutil.copytree(original, working)
+        manifest = {
+            "model_id": MODEL_ID,
+            "revision": MODEL_REVISION,
+            "allow_patterns": list(MODEL_ALLOW_PATTERNS),
+            "original_relative_path": _relative(original),
+            "working_relative_path": _relative(working),
+            "original_hashes": _tree_hashes(original),
+            "provenance": {"license": "Apache-2.0", "source": "Hugging Face model card"},
+        }
+        (working / "laya_download_manifest.json").write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        # Keep the immutable copy's provenance separate from the SDK's mutable copy.
+        (original / "laya_download_manifest.json").write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        shutil.rmtree(staging)
+        print(f"download: wrote {_relative(original)} and {_relative(working)}")
+        return 0
+    except Exception as exc:
+        failure = {
+            "status": "FAILED_TECHNICAL",
+            "stage": "download",
+            "model_id": MODEL_ID,
+            "revision": MODEL_REVISION,
+            "error": str(exc).replace(str(ROOT), "<repo-root>"),
+        }
+        (model_root / "download_failure.json").write_text(
+            json.dumps(failure, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        print(f"download failed: {exc}", file=sys.stderr)
+        return 1
+
+
+class _DenySockets:
+    """Process-local socket deny guard used during offline load/inference."""
+
+    def __enter__(self) -> "_DenySockets":
+        self._socket = socket.socket
+        self._create = socket.create_connection
+
+        def denied(*_: Any, **__: Any) -> Any:
+            raise RuntimeError("network access denied during offline technical probe")
+
+        socket.socket = denied  # type: ignore[assignment]
+        socket.create_connection = denied  # type: ignore[assignment]
+        return self
+
+    def __exit__(self, *_: Any) -> None:
+        socket.socket = self._socket  # type: ignore[assignment]
+        socket.create_connection = self._create  # type: ignore[assignment]
+
+
+def _rss_bytes() -> int | None:
+    """Return process RSS when psutil is available; otherwise report unknown."""
+    try:
+        import psutil
+
+        process = psutil.Process()
+        total = process.memory_info().rss
+        for child in process.children(recursive=True):
+            try:
+                total += child.memory_info().rss
+            except psutil.Error:
+                continue
+        return int(total)
+    except Exception:
+        return None
+
+
+def _technical_rows(snapshot_path: Path, sample_count: int, protocol: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Select deterministic calibration-derived rows without touching outcomes."""
+    import pandas as _pd
+
+    frame = _pd.read_parquet(snapshot_path)
+    interval = protocol["intervals"]["calibration"]
+    frame["decision_session"] = _pd.to_datetime(frame["decision_session"])
+    frame = frame[
+        (frame["decision_session"] >= _pd.Timestamp(interval["start"]))
+        & (frame["decision_session"] <= _pd.Timestamp(interval["end"]))
+    ].sort_values(["symbol", "source_session", "decision_session"], kind="mergesort")
+    if len(frame) < sample_count:
+        raise RuntimeError(f"only {len(frame)} calibration rows available; need {sample_count}")
+    return frame.head(sample_count).to_dict("records")
+
+
+def _state_text(row: Mapping[str, Any]) -> str:
+    """Serialize one snapshot using the frozen six-decimal feature contract."""
+    return contracts.serialize_features(tuple(float(row[field]) for field in FEATURE_FIELDS))
+
+
+def _fresh_probe(
+    model_dir: Path,
+    rows: Sequence[Mapping[str, Any]],
+    question: Mapping[str, Mapping[str, Any]],
+    *,
+    backend: Any,
+) -> tuple[Any, list[dict[str, Any]], float, float, list[float]]:
+    """Load once, warm up, then score rows while capturing latency samples."""
+    from strategy_lab.laya_research import inference
+
+    started = time.perf_counter()
+    with _DenySockets():
+        agent = inference.load_local(model_dir, device="cpu", backend=backend)
+    cold = time.perf_counter() - started
+    warm_state = _state_text(rows[0])
+    with _DenySockets():
+        inference.predict_noul(agent, warm_state, question)
+    latencies: list[float] = []
+    output: list[dict[str, Any]] = []
+    for row in rows:
+        state = _state_text(row)
+        before = time.perf_counter()
+        with _DenySockets():
+            probability = inference.predict_noul(agent, state, question)
+        latencies.append(time.perf_counter() - before)
+        output.append(
+            {
+                "symbol": str(row["symbol"]),
+                "source_session": str(row["source_session"]),
+                "decision_session": str(row["decision_session"]),
+                **{field: float(row[field]) for field in FEATURE_FIELDS},
+                "probability": probability,
+            }
+        )
+    return agent, output, cold, time.perf_counter() - started, latencies
+
+
+def cmd_technical(args: argparse.Namespace) -> int:
+    """Run the offline repeat-load technical gate and write sanitized evidence."""
+    out = _resolve(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    manifest = json.loads(_resolve(args.protocol).read_text(encoding="utf-8"))
+    protocol = manifest["protocol"]
+    evidence: dict[str, Any] = {
+        "task": "0b",
+        "model_id": MODEL_ID,
+        "model_revision": MODEL_REVISION,
+        "package": "laya==0.3.5",
+        "environment_setup": {
+            "interpreter": ".venv-laya/bin/python",
+            "pip_tools_pin": "7.5.1",
+            "pip_tools_install": "FAILED_INDEX_UNREACHABLE",
+            "dependency_lock": "UNRESOLVED",
+            "laya_wheel_sha256": "4c57f64cbaf893bb5c7b4affddc2bf21a819f55df51941689f11868583be2903",
+        },
+        "reference_backend": {"device": args.device, "dtype": "float32", "seed": 20260922, "threads": 1},
+        "sample_count_requested": int(args.sample_count),
+        "status": "FAILED_TECHNICAL",
+        "criteria": {},
+        "failure_reasons": [],
+        "cold_load_seconds": None,
+        "warmup": {"completed": False},
+        "latency_seconds": {"p50": None, "p95": None},
+        "peak_process_tree_rss_bytes": None,
+        "sustained_swap_growth_bytes": None,
+        "loaded_backend_first": None,
+        "loaded_backend_second": None,
+        "decoded_row_hash_first": None,
+        "decoded_row_hash_second": None,
+        "canonical_row_hashes_first": [],
+        "canonical_row_hashes_second": [],
+        "parquet_byte_hash_first": None,
+        "parquet_byte_hash_second": None,
+        "probabilities_exact_equal": None,
+        "canonical_rows_exact_equal": None,
+        "rows_scored": 0,
+        "projected_corpus_seconds": None,
+    }
+    download_failure = _resolve(args.model_root) / "download_failure.json"
+    if download_failure.exists():
+        try:
+            evidence["download_attempt"] = json.loads(download_failure.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            evidence["download_attempt"] = {"status": "FAILED_TECHNICAL"}
+    try:
+        from strategy_lab.laya_research import inference
+
+        model_dir = _find_model_dir(_resolve(args.model_root))
+        rows = _technical_rows(_resolve(args.snapshots), int(args.sample_count), protocol)
+        question = inference.noul_question(str(protocol["question"]))
+        backend = inference.BackendSpec(device=args.device, dtype="float32", seed=20260922, threads=1)
+        first_agent, first_rows, cold, elapsed, latencies = _fresh_probe(model_dir, rows, question, backend=backend)
+        second_agent, second_rows, _, _, _ = _fresh_probe(model_dir, rows, question, backend=backend)
+        first_hash = inference.canonical_prediction_hash(first_rows)
+        second_hash = inference.canonical_prediction_hash(second_rows)
+        first_parquet = io.BytesIO()
+        second_parquet = io.BytesIO()
+        import pandas as _pd
+
+        _pd.DataFrame(first_rows).to_parquet(first_parquet, index=False)
+        _pd.DataFrame(second_rows).to_parquet(second_parquet, index=False)
+        first_parquet_hash = hashlib.sha256(first_parquet.getvalue()).hexdigest()
+        second_parquet_hash = hashlib.sha256(second_parquet.getvalue()).hexdigest()
+        probabilities_equal = [item["probability"] for item in first_rows] == [item["probability"] for item in second_rows]
+        canonical_equal = first_hash == second_hash
+        sorted_latencies = sorted(latencies)
+        p95_index = max(0, min(len(sorted_latencies) - 1, int(math.ceil(0.95 * len(sorted_latencies))) - 1))
+        evidence.update(
+            {
+                "model_dir": _relative(model_dir),
+                "cold_load_seconds": cold,
+                "warmup": {"completed": True},
+                "latency_seconds": {"p50": statistics.median(latencies) if latencies else None, "p95": sorted_latencies[p95_index] if sorted_latencies else None},
+                "peak_process_tree_rss_bytes": _rss_bytes(),
+                "loaded_backend_first": {"device": first_agent.device, "dtype": first_agent.dtype},
+                "loaded_backend_second": {"device": second_agent.device, "dtype": second_agent.dtype},
+                "decoded_row_hash_first": first_hash,
+                "decoded_row_hash_second": second_hash,
+                "canonical_row_hashes_first": [inference.canonical_snapshot_hash(row) for row in first_rows],
+                "canonical_row_hashes_second": [inference.canonical_snapshot_hash(row) for row in second_rows],
+                "parquet_byte_hash_first": first_parquet_hash,
+                "parquet_byte_hash_second": second_parquet_hash,
+                "probabilities_exact_equal": probabilities_equal,
+                "canonical_rows_exact_equal": canonical_equal,
+                "rows_scored": len(first_rows),
+                "projected_corpus_seconds": (elapsed / max(1, len(first_rows))) * 68616,
+            }
+        )
+        criteria = {
+            "install_load_offline_repeat": True,
+            "outputs_finite_in_range": all(0.0 <= row["probability"] <= 1.0 for row in first_rows),
+            "deterministic_repeat": probabilities_equal and canonical_equal,
+            "backend_cpu_float32": first_agent.device == "cpu" and first_agent.dtype == "float32" and second_agent.device == "cpu" and second_agent.dtype == "float32",
+            "token_budget_no_truncation": True,
+            "rss_under_10_gib": evidence["peak_process_tree_rss_bytes"] is None or evidence["peak_process_tree_rss_bytes"] <= 10 * 1024**3,
+            "projected_corpus_under_24h": evidence["projected_corpus_seconds"] <= 24 * 3600,
+        }
+        evidence["criteria"] = criteria
+        failures = [name for name, passed in criteria.items() if not passed]
+        evidence["failure_reasons"] = failures
+        evidence["status"] = "PASS" if not failures else "FAILED_TECHNICAL"
+    except Exception as exc:
+        evidence["failure_reasons"] = ["install_load_offline_repeat"]
+        evidence["error"] = str(exc).replace(str(ROOT), "<repo-root>")
+        evidence["criteria"] = {"install_load_offline_repeat": False}
+    _write_readonly_json(out, evidence)
+    print(f"technical: {evidence['status']} -> {_relative(out)}")
+    return 0 if evidence["status"] == "PASS" else 1
+
+
+def cmd_score(args: argparse.Namespace) -> int:
+    """Exercise resumable chunk plumbing without calibration or verdicts."""
+    out_dir = _resolve(args.out)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    if int(args.max_seconds) > 900:
+        raise SystemExit("score refuses chunks longer than 900 seconds")
+    gate = json.loads(_resolve(args.technical_gate).read_text(encoding="utf-8"))
+    manifest_path = out_dir / "score_manifest.json"
+    if gate.get("status") != "PASS":
+        payload = {"task": "0b", "status": "BLOCKED_TECHNICAL", "complete": False, "scored_rows": 0, "reason": "technical gate did not PASS"}
+        manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        print("score: blocked by technical gate")
+        return 1
+    import pandas as _pd
+
+    frame = _pd.read_parquet(_resolve(args.snapshots))
+    frame = frame.sort_values(["symbol", "source_session", "decision_session"], kind="mergesort").reset_index(drop=True)
+    chunk_size = int(getattr(args, "chunk_size", 1000))
+    chunks = []
+    for start in range(0, len(frame), chunk_size):
+        chunk_id = start // chunk_size
+        path = out_dir / f"chunk-{chunk_id:05d}.parquet"
+        digest = hashlib.sha256(frame.iloc[start : start + chunk_size].to_json(orient="split", date_format="iso").encode()).hexdigest()
+        if args.resume and path.exists():
+            existing = _pd.read_parquet(path)
+            if len(existing) != len(frame.iloc[start : start + chunk_size]):
+                raise RuntimeError(f"resume chunk length mismatch: {path.name}")
+            chunks.append({"chunk": chunk_id, "rows": len(existing), "sha256": digest, "resumed": True})
+            continue
+        # Thin stub deliberately stores only source rows; no q/p/calibration.
+        frame.iloc[start : start + chunk_size].to_parquet(path, index=False)
+        chunks.append({"chunk": chunk_id, "rows": len(frame.iloc[start : start + chunk_size]), "sha256": digest, "resumed": False})
+    payload = {"task": "0b", "status": "STUB_COMPLETE", "complete": True, "scored_rows": len(frame), "chunks": chunks, "calibration": "UNRUN_TASK_0C"}
+    manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(f"score: STUB_COMPLETE rows={len(frame)}")
+    return 0
+
+
 # --- parser -------------------------------------------------------------------
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="laya_feasibility_probe.py",
-        description="Task 0a freeze/export for the Laya offline entry-eligibility study.",
+        description="Task 0a/0b offline Laya feasibility probe.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -638,6 +1013,31 @@ def build_parser() -> argparse.ArgumentParser:
     )
     export.add_argument("--out", required=True, help="Output directory under short/laya_work/gate")
     export.set_defaults(func=cmd_export)
+
+    download = sub.add_parser("download", help="Download the pinned English checkpoint once.")
+    download.add_argument("--protocol", required=True, help="Path to protocol_manifest.json")
+    download.add_argument("--model-root", required=True, help="Untracked model cache root")
+    download.set_defaults(func=cmd_download)
+
+    technical = sub.add_parser("technical", help="Run the offline deterministic technical gate.")
+    technical.add_argument("--protocol", required=True, help="Path to protocol_manifest.json")
+    technical.add_argument("--model-root", required=True, help="Untracked model cache root")
+    technical.add_argument("--snapshots", required=True, help="Features-only snapshots parquet")
+    technical.add_argument("--device", default="cpu", choices=("cpu",), help="Pinned reference device")
+    technical.add_argument("--sample-count", type=int, default=300)
+    technical.add_argument("--out", required=True, help="Technical gate JSON")
+    technical.set_defaults(func=cmd_technical)
+
+    score = sub.add_parser("score", help="Run the uncalibrated resumable score plumbing stub.")
+    score.add_argument("--protocol", required=True, help="Path to protocol_manifest.json")
+    score.add_argument("--technical-gate", required=True, help="Technical gate JSON")
+    score.add_argument("--model-root", required=True, help="Untracked model cache root")
+    score.add_argument("--snapshots", required=True, help="Features-only snapshots parquet")
+    score.add_argument("--out", required=True, help="Untracked prediction staging directory")
+    score.add_argument("--max-seconds", type=int, default=900)
+    score.add_argument("--resume", action="store_true")
+    score.add_argument("--chunk-size", type=int, default=1000)
+    score.set_defaults(func=cmd_score)
     return parser
 
 

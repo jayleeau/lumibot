@@ -1,0 +1,57 @@
+{
+  "canonical_row_hashes_first": [],
+  "canonical_row_hashes_second": [],
+  "canonical_rows_exact_equal": null,
+  "cold_load_seconds": null,
+  "criteria": {
+    "install_load_offline_repeat": false
+  },
+  "decoded_row_hash_first": null,
+  "decoded_row_hash_second": null,
+  "download_attempt": {
+    "error": "No module named 'huggingface_hub'",
+    "model_id": "convaiinnovations/laya",
+    "revision": "1c5edc17a7acd8701df6fc341c0d179f1c62c982",
+    "stage": "download",
+    "status": "FAILED_TECHNICAL"
+  },
+  "environment_setup": {
+    "dependency_lock": "UNRESOLVED",
+    "interpreter": ".venv-laya/bin/python",
+    "laya_wheel_sha256": "4c57f64cbaf893bb5c7b4affddc2bf21a819f55df51941689f11868583be2903",
+    "pip_tools_install": "FAILED_INDEX_UNREACHABLE",
+    "pip_tools_pin": "7.5.1"
+  },
+  "error": "no model working copy below short/laya_models",
+  "failure_reasons": [
+    "install_load_offline_repeat"
+  ],
+  "latency_seconds": {
+    "p50": null,
+    "p95": null
+  },
+  "loaded_backend_first": null,
+  "loaded_backend_second": null,
+  "model_id": "convaiinnovations/laya",
+  "model_revision": "1c5edc17a7acd8701df6fc341c0d179f1c62c982",
+  "package": "laya==0.3.5",
+  "parquet_byte_hash_first": null,
+  "parquet_byte_hash_second": null,
+  "peak_process_tree_rss_bytes": null,
+  "probabilities_exact_equal": null,
+  "projected_corpus_seconds": null,
+  "reference_backend": {
+    "device": "cpu",
+    "dtype": "float32",
+    "seed": 20260922,
+    "threads": 1
+  },
+  "rows_scored": 0,
+  "sample_count_requested": 300,
+  "status": "FAILED_TECHNICAL",
+  "sustained_swap_growth_bytes": null,
+  "task": "0b",
+  "warmup": {
+    "completed": false
+  }
+}
