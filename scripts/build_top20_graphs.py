@@ -129,7 +129,7 @@ def _load_holdings(trades_path: Path) -> dict[str, float]:
     return {s: round(d["real"] - d["cst"], 2) for s, d in bysym.items()}
 
 
-def _build_one(entry: dict, variant: str = "base") -> None:
+def _build_one(entry: dict, variant: str = "base", b_lut: dict | None = None) -> None:
     cid = entry["candidate_id"]
     if variant == "b":
         suffix = "-b"
@@ -168,11 +168,21 @@ def _build_one(entry: dict, variant: str = "base") -> None:
     six_rank = ""  # filled by caller optionally
     params = entry.get("params", {})
     soxl_badge = "<span class='badge'>SOXL-free</span>" if variant == "b" else ""
+    # For the SOXL-free (-b) variant, prefer its OWN results (b_lut keyed by base
+    # candidate_id) over the base entry's metrics, so the table is not mislabelled.
+    if variant == "b":
+        m6 = _gw(b_lut, cid, "six_year") or {}
+        m2 = _gw(b_lut, cid, "two_year") or {}
+        sh6 = m6.get("sharpe"); rt6 = m6.get("total_return"); dd6v = m6.get("max_drawdown"); fl6 = m6.get("fills")
+        sh2 = m2.get("sharpe"); rt2 = m2.get("total_return"); dd2v = m2.get("max_drawdown")
+    else:
+        sh6 = entry.get("sharpe"); rt6 = entry.get("total_return"); dd6v = entry.get("max_drawdown"); fl6 = entry.get("fills")
+        sh2 = entry.get("sharpe_2y"); rt2 = entry.get("total_return_2y"); dd2v = entry.get("max_drawdown_2y")
     rows_html = "\n".join(
         f"<tr><td class='k'>{k}</td><td>{html_esc(str(v))}</td></tr>" for k, v in [
             ("Candidate", title_cid), ("Family", params.get("family_id", "")),
-            ("6y Sharpe", _num(entry.get("sharpe"))), ("6y Return", _fmt_pct(entry.get("total_return"))),
-            ("6y Max DD", _fmt_pct(entry.get("max_drawdown"))), ("6y Fills", entry.get("fills")),
+            ("6y Sharpe", _num(sh6)), ("6y Return", _fmt_pct(rt6)),
+            ("6y Max DD", _fmt_pct(dd6v)), ("6y Fills", fl6),
         ]
     )
     # holdings bars
@@ -218,9 +228,9 @@ footer{{color:var(--muted);font-size:11px;margin-top:8px}}
 <tr><td class='k'>6y weight</td><td>{params.get('weight_mode')}</td></tr>
 <tr><td class='k'>6y exit</td><td>{params.get('exit_mode')}</td></tr>
 <tr><td class='k'>6y top_n</td><td>{params.get('top_n')}</td></tr>
-<tr><td class='k'>2y Sharpe</td><td>{_num(entry.get('sharpe_2y'))}</td></tr>
-<tr><td class='k'>2y Return</td><td>{_fmt_pct(entry.get('total_return_2y'))}</td></tr>
-<tr><td class='k'>2y Max DD</td><td>{_fmt_pct(entry.get('max_drawdown_2y'))}</td></tr></table></div>
+<tr><td class='k'>2y Sharpe</td><td>{_num(sh2)}</td></tr>
+<tr><td class='k'>2y Return</td><td>{_fmt_pct(rt2)}</td></tr>
+<tr><td class='k'>2y Max DD</td><td>{_fmt_pct(dd2v)}</td></tr></table></div>
 
 <div class="card"><h2>6-year equity &amp; drawdown</h2><div id="c6" style="width:100%;height:360px"></div></div>
 <div class="card"><h2>2-year equity &amp; drawdown</h2><div id="c2" style="width:100%;height:360px"></div></div>
@@ -312,10 +322,17 @@ def _gw(lut, cid, window):
     return rec
 
 
-def _list_row(i, cid, rel, base_or_b):
-    """Build one <tr>. `rel` is the (cid, window) lookup for the current variant."""
+def _list_row(i, cid, rel, base_or_b, lookup_cid=None):
+    """Build one <tr>. `rel` is the (cid, window) lookup for the current variant.
+
+    `cid` is the display id (e.g. "W0007-b"); `lookup_cid` is the key actually
+    present in `rel` (the result JSONLs are keyed by the BASE id). Defaults to
+    `cid`. This fixes the -b rows reading metrics by the "-b" key, which never
+    equals the base-id key the soxlfree JSONLs use.
+    """
+    lk = lookup_cid if lookup_cid is not None else cid
     def g(window):
-        return _gw(rel, cid, window) or {}
+        return _gw(rel, lk, window) or {}
     s6 = g("six_year").get("sharpe"); r6 = g("six_year").get("total_return"); d6 = g("six_year").get("max_drawdown")
     s2 = g("two_year").get("sharpe"); r2 = g("two_year").get("total_return"); d2 = g("two_year").get("max_drawdown")
     se = g("early").get("sharpe"); re_ = g("early").get("total_return")
@@ -365,7 +382,7 @@ def main() -> int:
         e["sharpe_2y"] = t.get("sharpe"); e["total_return_2y"] = t.get("total_return"); e["max_drawdown_2y"] = t.get("max_drawdown")
         # base + soxl-free variant graph pages
         for variant in ("base", "b"):
-            size = _build_one(e, variant=variant)
+            size = _build_one(e, variant=variant, b_lut=b_lut)
             if size is None:
                 print("skipped", e["candidate_id"], variant)
                 continue
@@ -382,10 +399,11 @@ def main() -> int:
     bi = len(entries) + 1
     for e in entries:
         cid = e["candidate_id"]
-        # -b variant rows: their own 6y/2y (b6_lut) + their early/2022-24 (b_lut)
+        # -b variant rows: their own 6y/2y (b6_lut) + their early/2022-24 (b_lut).
+        # The soxlfree JSONLs are keyed by the BASE id, so pass lookup_cid=cid.
         b_lut[(cid, "six_year")] = b6_lut.get((cid, "six_year"), {})
         b_lut[(cid, "two_year")] = b6_lut.get((cid, "two_year"), {})
-        rows.append(_list_row(bi, f"{cid}-b", b_lut, "b"))
+        rows.append(_list_row(bi, f"{cid}-b", b_lut, "b", lookup_cid=cid))
         bi += 1
     idx = f"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="robots" content="noindex,nofollow,noarchive"><title>HTS v2 — Top-20 (6y &times; 2y)</title>
