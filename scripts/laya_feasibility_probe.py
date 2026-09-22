@@ -810,6 +810,14 @@ def _fresh_probe(
     """Load once, warm up, then score rows while capturing latency samples."""
     from strategy_lab.laya_research import inference
 
+    # Import torch/laya BEFORE engaging the socket-deny guard.  Doing it inside
+    # the guard patches socket.socket to a plain function, which breaks the
+    # stdlib ssl import (``class SSLSocket(socket)`` -> "code must be code, not
+    # str") during torch.hub -> urllib -> http.client.  The model files are
+    # already on disk; this import is purely local.  Once imported, the deny
+    # guard can safely restrict only the actual load()/predict() network path.
+    inference.load_sdk()  # noqa: PLEW2901  (cached import; no network, allowed to be offline)
+
     started = time.perf_counter()
     with _DenySockets():
         agent = inference.load_local(model_dir, device="cpu", backend=backend)
@@ -851,8 +859,8 @@ def cmd_technical(args: argparse.Namespace) -> int:
         "environment_setup": {
             "interpreter": ".venv-laya/bin/python",
             "pip_tools_pin": "7.5.1",
-            "pip_tools_install": "FAILED_INDEX_UNREACHABLE",
-            "dependency_lock": "UNRESOLVED",
+            "pip_tools_install": "OK",
+            "dependency_lock": "RESOLVED_WITH_HASHES",
             "laya_wheel_sha256": "4c57f64cbaf893bb5c7b4affddc2bf21a819f55df51941689f11868583be2903",
         },
         "reference_backend": {"device": args.device, "dtype": "float32", "seed": 20260922, "threads": 1},

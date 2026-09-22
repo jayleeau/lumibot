@@ -196,6 +196,18 @@ def load_local(
 load_agent = load_local
 
 
+def load_sdk() -> ModuleType:
+    """Import the installed ``laya`` SDK lazily so torch/ssl import intact.
+
+    Returns a cached module.  This must be called BEFORE a socket-deny guard is
+    engaged: importing laya pulls in torch -> urllib -> http.client -> ssl, and
+    ``ssl`` subclasses the real ``socket``.  If ``socket.socket`` has already
+    been replaced by a deny stub, that import fails with "argument 'code' must
+    be code, not str".  The call itself needs no network; model files are local.
+    """
+    return importlib.import_module("laya")
+
+
 def _token_ids(tokenizer: Any, text: str) -> list[int]:
     encoded = tokenizer(text, add_special_tokens=False)
     ids = encoded.get("input_ids") if isinstance(encoded, Mapping) else getattr(encoded, "input_ids", None)
