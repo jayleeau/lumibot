@@ -1,0 +1,85 @@
+{
+  "protocol_version": "laya-research-v1",
+  "schema_version": "laya-snapshot-v1",
+  "universe_keyword": "U0",
+  "feature_fields": [
+    "close_over_sma_minus_1",
+    "ret",
+    "log10_mdv",
+    "ret1",
+    "r10",
+    "r20",
+    "r60",
+    "vol20",
+    "ddvol20",
+    "eff20",
+    "reg_slope",
+    "reg_r2"
+  ],
+  "feature_parameters": {
+    "trend_sma": 20,
+    "return_period": 20,
+    "liquidity_period": 63
+  },
+  "warmup": {
+    "min_returns": 60,
+    "min_closes": 61,
+    "note": "Longest selected feature needs 60 returns / 61 closes; the liquidity lookback (63) is the binding requirement and warmup rows lacking any of the twelve features are excluded consistently."
+  },
+  "fee_per_side": 0.00035,
+  "cost_bps_per_side": 3.5,
+  "entry_hour": 10,
+  "exit_hour": 10,
+  "calendar": {
+    "requested": "XNAS",
+    "resolved": "XNYS",
+    "version": "4.13.2"
+  },
+  "intervals": {
+    "train": {"start": "2019-01-01", "end": "2021-12-31"},
+    "calibration": {"start": "2022-01-01", "end": "2022-12-31"},
+    "gate": {"start": "2023-01-01", "end": "2023-12-31"},
+    "final": {"start": "2024-01-01", "end": "2026-09-08"}
+  },
+  "export_roles": ["train", "calibration", "gate"],
+  "forbidden_export_roles": ["final"],
+  "question": "Given only these completed daily indicators, will buying at the next exchange session's 10:00 New York hourly open and selling at the following exchange session's 10:00 hourly open yield a strictly positive return after 0.035 percent cost on each side?",
+  "seed": 20260922,
+  "target": {
+    "definition": "y = 1[R_net > 0]",
+    "formula": "R_net = P_exit * (1 - fee_per_side) / (P_entry * (1 + fee_per_side)) - 1",
+    "entry": "decision_session 10:00 America/New_York hourly open",
+    "exit": "following exchange session 10:00 America/New_York hourly open",
+    "price_source": "short/suite_v2_xnas_itch_hourly_adjusted.duckdb (back-adjusted)",
+    "invalidation": "missing price, bad session identity, or unresolved adjustment invalidates the observation"
+  },
+  "model_identity": {
+    "placeholder": "convaiinnovations/laya English root checkpoint (Apache-2.0)",
+    "package": "laya==0.3.5",
+    "revision": "1c5edc17a7acd8701df6fc341c0d179f1c62c982",
+    "note": "Identity placeholders recorded for Task 0b; no model is installed, downloaded, or imported in Task 0a."
+  },
+  "calibrator_identity": {
+    "placeholder": "monotone-logistic-calibration-v1",
+    "form": "sigmoid(a * logit(clip(q, 1e-4, 1 - 1e-4)) + b), a >= 0",
+    "fit_split": "calibration",
+    "seed": 20260922,
+    "note": "Calibration is defined now and fitted in Task 0c; no fitting occurs in Task 0a."
+  },
+  "serialization": {
+    "encoding": "ascii",
+    "decimals": 6,
+    "field_order": "feature_fields",
+    "note": "Fixed ASCII field order, six decimal places, normalized negative zero; symbol and dates stay outside the model text."
+  },
+  "data_query_bounds": {
+    "start": "2018-05-01",
+    "end_inclusive": "2024-01-05",
+    "final_holdout_start": "2024-01-01",
+    "note": "Warmup history starts at the archive inception. The upper bound covers the gate interval's exit session and deliberately excludes the final holdout."
+  },
+  "source_archives": {
+    "daily": "short/suite_monitored_xnas_itch_daily_adjusted.duckdb",
+    "hourly": "short/suite_v2_xnas_itch_hourly_adjusted.duckdb"
+  }
+}

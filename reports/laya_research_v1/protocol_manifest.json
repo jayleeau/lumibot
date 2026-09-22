@@ -1,0 +1,285 @@
+{
+  "code_hashes": {
+    "scripts/laya_feasibility_probe.py": "f28bddeb26cde4afe23b0179b8f4e5aad094e04b95bd1b271d87e42c2361ea69",
+    "strategy_lab/LAYA_RESEARCH.md": "92309a77c0c4871e4ff8968e548577c8d3dff1a3c5e688cdc998934cd1080e8a",
+    "strategy_lab/laya_research/__init__.py": "efcc212bd82414a70c55fb73a8a4575038cc3927297835923bb88cd2c65c4fb7",
+    "strategy_lab/laya_research/contracts.py": "ecb8ebbd24fe374fb7896c73533c0d8e6e82289119322840668de8516ff21c32",
+    "strategy_lab/laya_research/protocol_v1.json": "1316d99c672d26d6c01fd3e19df35a179be0ba9cecd99b10d49cfae9f7bc8417",
+    "strategy_lab/laya_research/snapshots.py": "7addef6f1671f986801b8125cf82ecafb81a12c942d678e726fb82f43d36f407",
+    "strategy_lab/laya_research/tests/test_snapshots.py": "1f43360d0fd85d0876956d8bd8891f30aed0da3af047871eb96215954f3f7b5c"
+  },
+  "created_by": "scripts/laya_feasibility_probe.py freeze",
+  "digests": {
+    "daily_first": "2018-05-01T00:00:00+00:00",
+    "daily_last": "2024-01-05T00:00:00+00:00",
+    "daily_ohlcv_sha256": "cd3e8a09f1e827dc305a3b386505f09fdb716c9394631f80d3c0ed1dc3d4dd4e",
+    "daily_rows": 78147,
+    "hourly_first": "2018-05-01T15:00:00+00:00",
+    "hourly_last": "2024-01-05T21:00:00+00:00",
+    "hourly_ohlcv_sha256": "6af0e8b190a9c7c38bafbbd0cd347826f32675636c9475429cf3a9e21548e06c",
+    "hourly_rows": 886115
+  },
+  "expected_sessions": {
+    "calibration": 251,
+    "gate": 250,
+    "query_total": 1431,
+    "source": "exchange_calendars XNYS 4.13.2 (requested XNAS)",
+    "train": 757
+  },
+  "golden_fixture": {
+    "digest": "02cfc0549103414c9e391d95690047e39f66b54755c0ad57c2fbdb14af617cbd",
+    "n_eligible": 72,
+    "n_outcomes": 200,
+    "n_snapshots": 74,
+    "path": "short/laya_work/gate/golden_off_synthetic.json",
+    "sha256": "54ad402e8f70869977179320e5a4f006805c671426d004a2c89ec1923d893948"
+  },
+  "identity_guards": {
+    "IBIT": {
+      "first_regular_session_utc": "2024-01-11T14:30:00Z",
+      "reason": "raw ticker was reused before the iShares Bitcoin Trust ETF began NASDAQ trading",
+      "source": "iShares filing / product materials"
+    }
+  },
+  "inception_exclusions": {
+    "BITX": "2023-06-27",
+    "COIN": "2021-04-14",
+    "IBIT": "2024-01-11"
+  },
+  "manifest_version": "laya-research-manifest-v1",
+  "note": "Read-only Task 0a manifest. The final holdout interval is excluded; no model, inference, calibration, or fit is performed.",
+  "preflight": {
+    "daily": {
+      "bad_ohlc_rows": 0,
+      "duplicate_session_keys": 0
+    },
+    "hourly": {
+      "bad_ohlc_rows": 0,
+      "duplicate_stamp_keys": 0
+    }
+  },
+  "protocol": {
+    "calendar": {
+      "requested": "XNAS",
+      "resolved": "XNYS",
+      "version": "4.13.2"
+    },
+    "calibrator_identity": {
+      "fit_split": "calibration",
+      "form": "sigmoid(a * logit(clip(q, 1e-4, 1 - 1e-4)) + b), a >= 0",
+      "note": "Calibration is defined now and fitted in Task 0c; no fitting occurs in Task 0a.",
+      "placeholder": "monotone-logistic-calibration-v1",
+      "seed": 20260922
+    },
+    "cost_bps_per_side": 3.5,
+    "data_query_bounds": {
+      "end_inclusive": "2024-01-05",
+      "final_holdout_start": "2024-01-01",
+      "note": "Warmup history starts at the archive inception. The upper bound covers the gate interval's exit session and deliberately excludes the final holdout.",
+      "start": "2018-05-01"
+    },
+    "entry_hour": 10,
+    "exit_hour": 10,
+    "export_roles": [
+      "train",
+      "calibration",
+      "gate"
+    ],
+    "feature_fields": [
+      "close_over_sma_minus_1",
+      "ret",
+      "log10_mdv",
+      "ret1",
+      "r10",
+      "r20",
+      "r60",
+      "vol20",
+      "ddvol20",
+      "eff20",
+      "reg_slope",
+      "reg_r2"
+    ],
+    "feature_parameters": {
+      "liquidity_period": 63,
+      "return_period": 20,
+      "trend_sma": 20
+    },
+    "fee_per_side": 0.00035,
+    "forbidden_export_roles": [
+      "final"
+    ],
+    "intervals": {
+      "calibration": {
+        "end": "2022-12-31",
+        "start": "2022-01-01"
+      },
+      "final": {
+        "end": "2026-09-08",
+        "start": "2024-01-01"
+      },
+      "gate": {
+        "end": "2023-12-31",
+        "start": "2023-01-01"
+      },
+      "train": {
+        "end": "2021-12-31",
+        "start": "2019-01-01"
+      }
+    },
+    "model_identity": {
+      "note": "Identity placeholders recorded for Task 0b; no model is installed, downloaded, or imported in Task 0a.",
+      "package": "laya==0.3.5",
+      "placeholder": "convaiinnovations/laya English root checkpoint (Apache-2.0)",
+      "revision": "1c5edc17a7acd8701df6fc341c0d179f1c62c982"
+    },
+    "protocol_version": "laya-research-v1",
+    "question": "Given only these completed daily indicators, will buying at the next exchange session's 10:00 New York hourly open and selling at the following exchange session's 10:00 hourly open yield a strictly positive return after 0.035 percent cost on each side?",
+    "schema_version": "laya-snapshot-v1",
+    "seed": 20260922,
+    "serialization": {
+      "decimals": 6,
+      "encoding": "ascii",
+      "field_order": "feature_fields",
+      "note": "Fixed ASCII field order, six decimal places, normalized negative zero; symbol and dates stay outside the model text."
+    },
+    "source_archives": {
+      "daily": "short/suite_monitored_xnas_itch_daily_adjusted.duckdb",
+      "hourly": "short/suite_v2_xnas_itch_hourly_adjusted.duckdb"
+    },
+    "target": {
+      "definition": "y = 1[R_net > 0]",
+      "entry": "decision_session 10:00 America/New_York hourly open",
+      "exit": "following exchange session 10:00 America/New_York hourly open",
+      "formula": "R_net = P_exit * (1 - fee_per_side) / (P_entry * (1 + fee_per_side)) - 1",
+      "invalidation": "missing price, bad session identity, or unresolved adjustment invalidates the observation",
+      "price_source": "short/suite_v2_xnas_itch_hourly_adjusted.duckdb (back-adjusted)"
+    },
+    "universe_keyword": "U0",
+    "warmup": {
+      "min_closes": 61,
+      "min_returns": 60,
+      "note": "Longest selected feature needs 60 returns / 61 closes; the liquidity lookback (63) is the binding requirement and warmup rows lacking any of the twelve features are excluded consistently."
+    }
+  },
+  "protocol_sha256": "929f3a7ad6cdff67eb81f2c36dc44ce9db640f8323a3c2506ac01d5ed30400fd",
+  "query_bounds": {
+    "end_inclusive": "2024-01-05",
+    "final_holdout_start": "2024-01-01",
+    "start": "2018-05-01",
+    "symbols": 57
+  },
+  "read_only": true,
+  "source_archives": {
+    "daily": {
+      "bytes": 17313792,
+      "metadata": {
+        "bar_price_adjustment": "split back-adjusted via short/adjust_daily.py; open/high/low/close x cumulative factor, volume / cumulative factor, notional (close*volume) conserved",
+        "created_at_utc": "2026-09-11T02:21:19.593501+00:00",
+        "dataset": "XNAS.ITCH",
+        "derived_from_v2_cache": "suite_v2_xnas_itch_daily_raw.duckdb",
+        "live_entitlement_cutoff": "2026-09-10T04:00:00Z",
+        "nonfinite_bars_dropped": "0",
+        "requested_end_exclusive": "2026-09-10T04:00:00Z",
+        "requested_start": "2018-05-01T00:00:00Z",
+        "residual_step_candidates": "7",
+        "rows_dropped_unpriced": "148",
+        "schema": "ohlcv-1d",
+        "split_adjustment_applied_at_utc": "2026-09-11T03:46:06.169949+00:00",
+        "split_adjustment_events": "45",
+        "split_adjustment_revision": "splits:v1-672c665aa6c03706e1d28170c4bcac4c0dc3f9f90bfa1f366c1af165ff8254b0",
+        "split_adjustment_rows_after": "182516",
+        "split_adjustment_rows_before": "182664",
+        "split_adjustment_source_archive": "<sanitized-absolute-path>",
+        "symbols": "[\"AAPL\",\"ABNB\",\"ADBE\",\"AMAT\",\"AMD\",\"AMGN\",\"AMZN\",\"AVGO\",\"BIL\",\"BITX\",\"BKNG\",\"BOIL\",\"COIN\",\"COST\",\"CRWD\",\"CSCO\",\"DASH\",\"DBC\",\"EEM\",\"EFA\",\"ERX\",\"EWZ\",\"FAS\",\"FXI\",\"GDX\",\"GILD\",\"GLD\",\"GOOGL\",\"HON\",\"HYG\",\"IBB\",\"IBIT\",\"IBM\",\"IEF\",\"INDA\",\"INTC\",\"ISRG\",\"IWM\",\"KRE\",\"LABU\",\"LQD\",\"MDLZ\",\"META\",\"MSFT\",\"MSTR\",\"MU\",\"NFLX\",\"NUGT\",\"NVDA\",\"PANW\",\"PEP\",\"PLTR\",\"PYPL\",\"QCOM\",\"QQQ\",\"SLV\",\"SMH\",\"SOXL\",\"SOXX\",\"SPY\",\"SSO\",\"TECL\",\"TLT\",\"TMO\",\"TNA\",\"TQQQ\",\"TSLA\",\"TXN\",\"UDOW\",\"UNG\",\"UPRO\",\"USO\",\"UUP\",\"VNQ\",\"XBI\",\"XHB\",\"XLB\",\"XLC\",\"XLE\",\"XLF\",\"XLI\",\"XLK\",\"XLP\",\"XLRE\",\"XLU\",\"XLV\",\"XLY\",\"XME\",\"XOP\",\"XRT\"]",
+        "universe_sources": "{\"suite_native_v1\":[\"AAPL\",\"ABNB\",\"ADBE\",\"AMAT\",\"AMD\",\"AMGN\",\"AMZN\",\"AVGO\",\"BKNG\",\"COST\",\"CRWD\",\"CSCO\",\"DASH\",\"GILD\",\"GOOGL\",\"HON\",\"IBM\",\"INTC\",\"ISRG\",\"MDLZ\",\"META\",\"MSFT\",\"MU\",\"NFLX\",\"NVDA\",\"PANW\",\"PEP\",\"PLTR\",\"PYPL\",\"QCOM\",\"TMO\",\"TSLA\",\"TXN\"],\"suite_hourly_trend_stop_v2\":[\"BIL\",\"BITX\",\"BOIL\",\"COIN\",\"DBC\",\"EEM\",\"EFA\",\"ERX\",\"EWZ\",\"FAS\",\"FXI\",\"GDX\",\"GLD\",\"HYG\",\"IBB\",\"IBIT\",\"IEF\",\"INDA\",\"IWM\",\"KRE\",\"LABU\",\"LQD\",\"MSTR\",\"NUGT\",\"QQQ\",\"SLV\",\"SMH\",\"SOXL\",\"SOXX\",\"SPY\",\"SSO\",\"TECL\",\"TLT\",\"TNA\",\"TQQQ\",\"UDOW\",\"UNG\",\"UPRO\",\"USO\",\"UUP\",\"VNQ\",\"XBI\",\"XHB\",\"XLB\",\"XLC\",\"XLE\",\"XLF\",\"XLI\",\"XLK\",\"XLP\",\"XLRE\",\"XLU\",\"XLV\",\"XLY\",\"XME\",\"XOP\",\"XRT\"]}"
+      },
+      "path": "short/suite_monitored_xnas_itch_daily_adjusted.duckdb",
+      "sha256": "1e14c5c89cbcae2b924f90127535782178cde3d60ddc119545a07377b49a1cb6"
+    },
+    "hourly": {
+      "bytes": 51130368,
+      "metadata": {
+        "bar_price_adjustment": "split back-adjusted via short/adjust_db.py; open/high/low/close x cumulative factor, volume / cumulative factor, notional (close*volume) conserved",
+        "created_at_utc": "2026-09-09T13:01:49.864251+00:00",
+        "dataset": "XNAS.ITCH",
+        "dataset_condition_notes": "DataBento reported reduced-quality dates while downloading: 2021-07-07, 2021-10-26, 2022-09-19. Retained as source data.",
+        "identity_guards_json": "{\"IBIT\": {\"first_regular_session_utc\": \"2024-01-11T14:30:00Z\", \"reason\": \"raw ticker was reused before the iShares Bitcoin Trust ETF began NASDAQ trading\", \"source\": \"iShares filing / product materials\"}}",
+        "nonfinite_bars_dropped": "5",
+        "requested_end_exclusive": "2026-09-09T00:00:00Z",
+        "requested_start": "2018-05-01T00:00:00Z",
+        "schema": "ohlcv-1h",
+        "source_timestamp_semantics": "DataBento ohlcv-1h ts_event timestamps",
+        "split_adjustment_applied_at_utc": "2026-09-10T14:20:57.957275+00:00",
+        "split_adjustment_events": "29",
+        "split_adjustment_revision": "splits:v1-5826a2d778939dce855eddf8374df260f64c951e9e3e4b489919b8bcde0d1529",
+        "split_adjustment_rows_after": "1369018",
+        "split_adjustment_rows_before": "1369023",
+        "split_adjustment_source_archive": "short/suite_v2_xnas_itch_hourly.duckdb",
+        "split_adjustment_spliced_rows_dropped": "5",
+        "symbols": "[\"BIL\",\"BITX\",\"BOIL\",\"COIN\",\"DBC\",\"EEM\",\"EFA\",\"ERX\",\"EWZ\",\"FAS\",\"FXI\",\"GDX\",\"GLD\",\"HYG\",\"IBB\",\"IBIT\",\"IEF\",\"INDA\",\"IWM\",\"KRE\",\"LABU\",\"LQD\",\"MSTR\",\"NUGT\",\"QQQ\",\"SLV\",\"SMH\",\"SOXL\",\"SOXX\",\"SPY\",\"SSO\",\"TECL\",\"TLT\",\"TNA\",\"TQQQ\",\"UDOW\",\"UNG\",\"UPRO\",\"USO\",\"UUP\",\"VNQ\",\"XBI\",\"XHB\",\"XLB\",\"XLC\",\"XLE\",\"XLF\",\"XLI\",\"XLK\",\"XLP\",\"XLRE\",\"XLU\",\"XLV\",\"XLY\",\"XME\",\"XOP\",\"XRT\"]"
+      },
+      "path": "short/suite_v2_xnas_itch_hourly_adjusted.duckdb",
+      "sha256": "fa7c4a247a78987de656f9bfa48c7dc6a4a814b55bf7a89fd2087e7c0fe96159"
+    }
+  },
+  "symbol_effective_start": {
+    "BIL": "2018-05-01",
+    "BITX": "2023-06-27",
+    "BOIL": "2018-05-01",
+    "COIN": "2021-04-14",
+    "DBC": "2018-05-01",
+    "EEM": "2018-05-01",
+    "EFA": "2018-05-01",
+    "ERX": "2018-05-01",
+    "EWZ": "2018-05-01",
+    "FAS": "2018-05-01",
+    "FXI": "2018-05-01",
+    "GDX": "2018-05-01",
+    "GLD": "2018-05-01",
+    "HYG": "2018-05-01",
+    "IBB": "2018-05-01",
+    "IBIT": "2024-01-11",
+    "IEF": "2018-05-01",
+    "INDA": "2018-05-01",
+    "IWM": "2018-05-01",
+    "KRE": "2018-05-01",
+    "LABU": "2018-05-01",
+    "LQD": "2018-05-01",
+    "MSTR": "2018-05-01",
+    "NUGT": "2018-05-01",
+    "QQQ": "2018-05-01",
+    "SLV": "2018-05-01",
+    "SMH": "2018-05-01",
+    "SOXL": "2018-05-01",
+    "SOXX": "2018-05-01",
+    "SPY": "2018-05-01",
+    "SSO": "2018-05-01",
+    "TECL": "2018-05-01",
+    "TLT": "2018-05-01",
+    "TNA": "2018-05-01",
+    "TQQQ": "2018-05-01",
+    "UDOW": "2018-05-01",
+    "UNG": "2018-05-01",
+    "UPRO": "2018-05-01",
+    "USO": "2018-05-01",
+    "UUP": "2018-05-01",
+    "VNQ": "2018-05-01",
+    "XBI": "2018-05-01",
+    "XHB": "2018-05-01",
+    "XLB": "2018-05-01",
+    "XLC": "2018-06-19",
+    "XLE": "2018-05-01",
+    "XLF": "2018-05-01",
+    "XLI": "2018-05-01",
+    "XLK": "2018-05-01",
+    "XLP": "2018-05-01",
+    "XLRE": "2018-05-01",
+    "XLU": "2018-05-01",
+    "XLV": "2018-05-01",
+    "XLY": "2018-05-01",
+    "XME": "2018-05-01",
+    "XOP": "2018-05-01",
+    "XRT": "2018-05-01"
+  },
+  "task": "0a"
+}
