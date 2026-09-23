@@ -19,10 +19,12 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
+import logging
 import sys
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Iterator, Mapping
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -45,6 +47,44 @@ from strategy_lab.hts_parity import (  # noqa: E402
 EXIT_PASS = 0
 EXIT_MISMATCH = 1
 EXIT_UNVERIFIABLE = 2
+
+
+def _configured_loggers() -> list[logging.Logger]:
+    loggers = [logging.getLogger()]
+    for name in list(logging.root.manager.loggerDict):
+        candidate = logging.getLogger(name)
+        if isinstance(candidate, logging.Logger):
+            loggers.append(candidate)
+    return loggers
+
+
+@contextlib.contextmanager
+def _route_library_logging_to_stderr() -> Iterator[None]:
+    """Keep framework/library logging off stdout for the CLI's own output.
+
+    Entering the native path lazily imports LumiBot, which attaches a
+    ``StreamHandler(sys.stdout)`` and logs a startup line at import time.  We
+    cannot edit the framework, so while verification runs we redirect
+    ``sys.stdout`` to ``sys.stderr`` (so handlers created during the import bind
+    to stderr) and re-point any already-attached stdout stream handlers at
+    stderr.  The CLI prints its own report after this context exits, so stdout
+    carries only the report and ``json.loads(stdout)`` succeeds in ``--json``.
+    """
+    real_stdout = sys.stdout
+    rebound: list[tuple[logging.Handler, Any]] = []
+    for logger in _configured_loggers():
+        for handler in list(logger.handlers):
+            if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
+                if getattr(handler, "stream", None) is real_stdout:
+                    rebound.append((handler, handler.stream))
+                    handler.setStream(sys.stderr)
+    try:
+        with contextlib.redirect_stdout(sys.stderr):
+            yield
+    finally:
+        for handler, stream in rebound:
+            handler.setStream(stream)
+
 
 # These are the declared parents in the discovery builders, not parents inferred
 # from parameter similarity (W0018, for example, still belongs to H100).
@@ -379,13 +419,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f"status: unverifiable\n  reason: {reason}")
         return EXIT_UNVERIFIABLE
 
-    report = verify_sessions(
-        list(args.live_session),
-        tolerances,
-        run_native=args.run_native,
-        native_out=args.native_out,
-        compare_pnl=args.compare_pnl,
-    )
+    with _route_library_logging_to_stderr():
+        report = verify_sessions(
+            list(args.live_session),
+            tolerances,
+            run_native=args.run_native,
+            native_out=args.native_out,
+            compare_pnl=args.compare_pnl,
+        )
 
     if args.json:
         print(json.dumps(report, indent=2, default=str))

@@ -10,6 +10,7 @@ from __future__ import annotations
 import copy
 import json
 import math
+import subprocess
 import sys
 from datetime import date
 from pathlib import Path
@@ -588,6 +589,43 @@ def test_cli_unresolvable_native_parent_is_structured_unverifiable(
     assert exit_code == cli.EXIT_UNVERIFIABLE
     assert report["status"] == "unverifiable"
     assert any("has no declared paper6 native parent" in reason for reason in report["unverifiable"])
+
+
+def test_cli_json_stdout_is_pure_json_on_the_native_path(tmp_path: Path) -> None:
+    """A real subprocess must emit JSON-only stdout even when the native path
+    imports LumiBot, whose import-time logging writes a startup line.
+
+    The in-process tests cannot catch this: ``lumibot`` is already imported at
+    collection time, so its startup log fires before ``capsys`` starts.  Only a
+    fresh subprocess exercises the import during the CLI run.
+    """
+    _strategy, payload = _production_session_payload()
+    path = tmp_path / "2026-09-23.json"
+    AtomicJsonStore(path).write_session(payload)
+
+    script = REPO_ROOT / "scripts" / "verify_paper_six_parity.py"
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--live-session",
+            str(path),
+            "--run-native",
+            "--native-out",
+            str(tmp_path / "native"),
+            "--json",
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    # The native path fails closed on this fixture, but it still imports
+    # LumiBot (the source of the stdout pollution) and must return exit 2.
+    assert proc.returncode == cli.EXIT_UNVERIFIABLE
+    report = json.loads(proc.stdout)  # must not raise on startup log noise
+    assert report["status"] == "unverifiable"
+    # Nothing outside the JSON document may appear on stdout.
+    assert proc.stdout.strip() == json.dumps(report, indent=2, default=str).strip()
 
 
 def test_pnl_comparison_rejects_missing_sessions_and_reports_first_divergence() -> None:
