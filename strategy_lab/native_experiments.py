@@ -1518,6 +1518,36 @@ class RegistryHtsStrategy(Strategy):
             else:
                 self._rebalance(day, rebalance_hour)
 
+    @staticmethod
+    def _cumulative_filled_quantity(order: Order, event_quantity: float) -> float:
+        """Cumulative filled quantity for an order, not one broker fill event.
+
+        LumiBot calls ``on_filled_order`` once per broker fill event and passes
+        that event's quantity (``broker._process_filled_order`` appends every
+        event to ``order.transactions``).  A market order that fills in several
+        executions therefore arrives with only the final fragment as
+        ``quantity``; sizing the recorded position (and its protective stop)
+        from that fragment would leave most of the real position unprotected.
+        Prefer the cumulative filled quantity, then the order's total size.
+        """
+        try:
+            filled = sum(float(getattr(t, "quantity", 0) or 0)
+                         for t in (getattr(order, "transactions", None) or []))
+        except (TypeError, ValueError):
+            filled = 0.0
+        if math.isfinite(filled) and filled > 0.0:
+            return filled
+        try:
+            ordered = float(getattr(order, "quantity", 0) or 0)
+        except (TypeError, ValueError):
+            ordered = 0.0
+        if math.isfinite(ordered) and ordered > 0.0:
+            return ordered
+        value = float(event_quantity)
+        if not math.isfinite(value) or value <= 0.0:
+            raise RuntimeError("cannot determine filled entry quantity")
+        return value
+
     def on_filled_order(self, position: Any, order: Order, price: float, quantity: float,
                         multiplier: float) -> None:
         symbol = order.asset.symbol
@@ -1529,8 +1559,12 @@ class RegistryHtsStrategy(Strategy):
             if not math.isfinite(atr) or atr <= 0.0:
                 raise RuntimeError(f"cannot establish a stop for {symbol}: no entry ATR")
             mode = str(self._params["exit_mode"])
+            # The callback ``quantity`` is a single fill event; the held position
+            # and its protective stop must use the cumulative filled quantity or a
+            # multi-execution market fill leaves the bulk of the position exposed.
+            entry_quantity = self._cumulative_filled_quantity(order, quantity)
             self._positions[symbol] = {
-                "quantity": float(quantity),
+                "quantity": entry_quantity,
                 "entry_price": float(price),
                 "entry_atr": atr,
                 "entry_session": self._current_day(),
@@ -1542,7 +1576,7 @@ class RegistryHtsStrategy(Strategy):
                 "seeded": mode not in ("chandelier-since-entry", "chandelier-14-bar"),
             }
             self._journal.append({"event": "fill", "side": "buy", "symbol": symbol,
-                                  "price": float(price), "quantity": float(quantity)})
+                                  "price": float(price), "quantity": entry_quantity})
             self._place_protective_stop(symbol)
             if bool(getattr(self, "_risk_off_active", False)):
                 self._risk_off_race_symbols.add(symbol)
