@@ -30,7 +30,7 @@ import math
 import os
 import time
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -81,12 +81,20 @@ from strategy_lab.hts_policies import (  # noqa: E402
     apply_leveraged_cap,
     cap_risk_contributions,
     expected_trade_move_bps,
+    forecast_volatility,
     market_gate_open,
     rank_scores,
     risk_off_gate_open,
     schedule_due,
     select_holdings,
     target_weights,
+)
+from strategy_lab.hts_audit import (  # noqa: E402
+    AtomicJsonStore,
+    build_decision_snapshot,
+    build_strategy_event_payload,
+    deserialize_runtime_state,
+    serialize_runtime_state,
 )
 
 DAILY_DB = ROOT / "short" / "suite_monitored_xnas_itch_daily_adjusted.duckdb"
@@ -557,6 +565,54 @@ def build_virtual_stop_gap_event(
     }
 
 
+def _normalize_position_quantities(value: Any) -> dict[str, float] | None:
+    """Normalize broker positions into a symbol -> quantity map."""
+    if value is None:
+        return None
+    if isinstance(value, Mapping):
+        quantities: dict[str, float] = {}
+        for symbol, quantity in value.items():
+            try:
+                quantities[str(symbol)] = float(quantity)
+            except (TypeError, ValueError):
+                continue
+        return quantities
+    quantities = {}
+    for position in value:
+        symbol = getattr(getattr(position, "asset", None), "symbol", None)
+        quantity = getattr(position, "quantity", None)
+        if symbol is None or quantity is None:
+            continue
+        try:
+            quantities[str(symbol)] = float(quantity)
+        except (TypeError, ValueError):
+            continue
+    return quantities
+
+
+def _parse_state_day(value: Any) -> Any:
+    if value is None or isinstance(value, date):
+        return value
+    try:
+        return datetime.fromisoformat(str(value)).date()
+    except ValueError:
+        return value
+
+
+def _match_open_order(open_orders: Sequence[Any], symbol: str, *, buy: bool) -> Any:
+    """Find an order for ``symbol`` on the requested side, if unambiguous."""
+    matches = []
+    for order in open_orders or []:
+        order_symbol = getattr(getattr(order, "asset", None), "symbol", None)
+        if str(order_symbol) != str(symbol):
+            continue
+        is_buy = getattr(order, "is_buy_order", None)
+        if callable(is_buy) and bool(is_buy()) != bool(buy):
+            continue
+        matches.append(order)
+    return matches[0] if len(matches) == 1 else None
+
+
 class RegistryHtsStrategy(Strategy):
     """The control contract with every catalog mechanism exposed and consumed."""
 
@@ -577,6 +633,8 @@ class RegistryHtsStrategy(Strategy):
         self._cancelled_pending_buys: dict[str, dict[str, Any]] = {}
         self._pending_sells: set[str] = set()
         self._pending_sell_reason: dict[str, str] = {}
+        self._pending_sell_meta: dict[str, dict[str, Any]] = {}
+        self._protective_meta: dict[str, dict[str, Any]] = {}
         self._stop_exit_context: dict[str, dict[str, Any]] = {}
         self._stop_gap_events: list[dict[str, Any]] = []
         self._lifecycle_trace: list[dict[str, Any]] = []
@@ -605,6 +663,506 @@ class RegistryHtsStrategy(Strategy):
         # callback and submitted at the next bar the engine can actually fill.
         self._deferred_rebalance: dict[str, Any] | None = None
         self._deferred_rebalance_events: list[dict[str, Any]] = []
+        # Audit/persistence state.  Persistence is fail-open: a checkpoint
+        # callback may raise but must never alter the trading path.
+        self._event_sequence = 0
+        self._decision_sequence = 0
+        self._intent_sequence = 0
+        self._active_decision_id: str | None = None
+        self._last_decision_id: str | None = None
+        self._processed_decision_ids: set[str] = set()
+        self._order_index: dict[str, dict[str, Any]] = {}
+        self._unmatched_broker_orders: dict[str, Any] = {}
+        self._protective_state: dict[str, dict[str, Any]] = {}
+        self._session_end_events: list[dict[str, Any]] = []
+        self._decision_snapshots: list[dict[str, Any]] = []
+        self._decision_capture: dict[str, Any] | None = None
+        self._submission_scope_decision_id: str | None = None
+        self._persistence_callback = None
+        self._state_path = None
+
+    # -- audit / persistence --------------------------------------------------
+    def _audit_stream(self, name: str) -> list[dict[str, Any]]:
+        """Return a strategy stream, lazily creating it when a lightweight
+        harness (or a partially-constructed instance) does not define it."""
+        stream = getattr(self, name, None)
+        if stream is None:
+            stream = []
+            setattr(self, name, stream)
+        return stream
+
+    def _state_dict(self, name: str) -> dict[str, Any]:
+        """Return a strategy mapping, lazily creating it for lightweight harnesses."""
+        value = getattr(self, name, None)
+        if not isinstance(value, dict):
+            value = {}
+            setattr(self, name, value)
+        return value
+
+    def _next_sequence(self, name: str) -> int:
+        value = int(getattr(self, name, 0) or 0) + 1
+        setattr(self, name, value)
+        return value
+
+    def _audit_identity_fields(self) -> dict[str, Any]:
+        base = getattr(self, "_audit_identity", None)
+        if isinstance(base, Mapping) and base:
+            return dict(base)
+        return {
+            "strategy_name": getattr(self, "_strategy_name", None) or self.__class__.__name__,
+            "catalog_id": getattr(self, "_catalog_id", None),
+            "implementation_revision": getattr(self, "_implementation_revision", IMPLEMENTATION_REVISION),
+            "resolved_parameters_hash": getattr(self, "_resolved_parameters_hash", None),
+            "feature_hash": getattr(self, "_feature_hash", None),
+        }
+
+    def _current_decision_id(self) -> str:
+        active = getattr(self, "_active_decision_id", None)
+        if active:
+            return str(active)
+        name = getattr(self, "_strategy_name", None) or self.__class__.__name__
+        try:
+            day = self._current_day()
+        except Exception:
+            day = None
+        decision_id = f"{name}:{day}:{self._next_sequence('_decision_sequence')}"
+        self._active_decision_id = decision_id
+        self._last_decision_id = decision_id
+        return decision_id
+
+    def _begin_decision(self, day: Any, hour: int) -> str:
+        name = getattr(self, "_strategy_name", None) or self.__class__.__name__
+        decision_id = f"{name}:{day}:{hour}:{self._next_sequence('_decision_sequence')}"
+        self._active_decision_id = decision_id
+        self._last_decision_id = decision_id
+        self._decision_capture = {
+            "decision_id": decision_id,
+            "day": str(day),
+            "hour": int(hour),
+            "selection": None,
+            "allocation": None,
+        }
+        return decision_id
+
+    def _new_decision_id(self, day: Any | None = None, hour: int | None = None) -> str:
+        """Allocate a fresh decision ID for a reactive order outside a rebalance."""
+        name = getattr(self, "_strategy_name", None) or self.__class__.__name__
+        if day is None:
+            try:
+                day = self._current_day()
+            except Exception:
+                day = None
+        suffix = f":{hour}" if hour is not None else ""
+        decision_id = f"{name}:{day}{suffix}:{self._next_sequence('_decision_sequence')}"
+        self._active_decision_id = decision_id
+        self._last_decision_id = decision_id
+        return decision_id
+
+    def _event_time_iso(self) -> str:
+        try:
+            return pd.Timestamp(self.get_datetime()).isoformat()
+        except Exception:
+            return datetime.now(timezone.utc).isoformat()
+
+    def _record_event(self, event: dict[str, Any], *, lifecycle: bool = False) -> dict[str, Any]:
+        if lifecycle:
+            return self._record_lifecycle_event(event)
+        self._audit_stream("_journal").append(event)
+        return event
+
+    def _record_lifecycle_event(self, event: Mapping[str, Any]) -> dict[str, Any]:
+        """Append one immutable order-lifecycle event with authoritative time/sequence.
+
+        The same object is shared by the journal and the lifecycle trace so a
+        fill can never appear in one stream and not the other.
+        """
+        record = dict(event)
+        record.setdefault("event_time", self._event_time_iso())
+        record["event_sequence"] = self._next_sequence("_event_sequence")
+        self._audit_stream("_journal").append(record)
+        self._audit_stream("_lifecycle_trace").append(record)
+        return record
+
+    def _order_meta_store(self, order: Any, meta: Mapping[str, Any]) -> None:
+        index = getattr(self, "_order_index", None)
+        if index is None:
+            index = {}
+            self._order_index = index
+        index[str(getattr(order, "identifier", "") or "")] = dict(meta)
+
+    def _order_meta(self, order: Any) -> dict[str, Any]:
+        index = getattr(self, "_order_index", None)
+        if not isinstance(index, dict):
+            return {}
+        return dict(index.get(str(getattr(order, "identifier", "") or ""), {}))
+
+    def _persistence_checkpoint(self, reason: str) -> bool:
+        """Run the live persistence callback.  Never propagate a failure."""
+        callback = getattr(self, "_persistence_callback", None)
+        if callback is None:
+            return False
+        try:
+            callback(reason, self)
+        except Exception as error:  # fail-open by design
+            self._audit_stream("_diag").append({
+                "event": "persistence_failure",
+                "reason": str(reason),
+                "error": type(error).__name__,
+            })
+            return False
+        return True
+
+    def _restore_persisted_state(self) -> bool:
+        """Load, strictly validate, then apply a persisted restart checkpoint."""
+        path = getattr(self, "_state_path", None)
+        if path is None:
+            return False
+        try:
+            state = AtomicJsonStore(path).read_state(expected_identity=self._audit_identity_fields())
+            restored = deserialize_runtime_state(state)
+        except Exception as error:
+            self._audit_stream("_diag").append({
+                "event": "state_restore_failed",
+                "error": type(error).__name__,
+                "reason": str(error),
+            })
+            return False
+        self._apply_runtime_state(restored)
+        return True
+
+    def _apply_runtime_state(self, restored: Mapping[str, Any]) -> None:
+        self._event_sequence = int(restored["event_sequence"])
+        self._decision_sequence = int(restored["decision_sequence"])
+        self._intent_sequence = int(restored["intent_sequence"])
+        self._active_decision_id = restored["active_decision_id"]
+        self._last_decision_id = restored["last_decision_id"]
+        self._processed_decision_ids = set(restored["processed_decision_ids"])
+        self._signal_day = restored["signal_day"]
+        self._selected = tuple(restored["selected"])
+        self._ranks = dict(restored["ranks"])
+        self._positions = dict(restored["positions"])
+        self._pending_buys = dict(restored["pending_buys"])
+        self._pending_sells = set(restored["pending_sells"])
+        self._pending_sell_reason = dict(restored["pending_sell_reason"])
+        self._pending_sell_meta = dict(restored["pending_sell_meta"])
+        self._stop_exit_context = dict(restored["stop_exit_context"])
+        self._protective = {}
+        self._protective_state = dict(restored["protective_orders"])
+        self._protective_meta = {
+            str(symbol): dict(meta)
+            for symbol, meta in restored["protective_orders"].items()
+            if isinstance(meta, Mapping)
+        }
+        self._cooldowns = dict(restored["cooldowns"])
+        risk_state = dict(restored["risk_off_state"])
+        self._risk_off_active = bool(restored["risk_off_active"])
+        self._re_risk_deadline_index = risk_state["deadline_index"]
+        self._last_risk_gate_session = _parse_state_day(risk_state["last_gate_session"])
+        self._risk_off_race_symbols = set(restored["risk_off_race_symbols"])
+        self._deferred_rebalance = restored["deferred_rebalance"]
+        self._last_quote_snapshot = restored["last_quote_snapshot"]
+
+    def _broker_position_quantities(self) -> dict[str, float] | None:
+        positions = self.get_positions()
+        return _normalize_position_quantities(positions)
+
+    def _reconcile_broker_state_live(
+        self,
+        *,
+        broker_positions: Any = None,
+        open_orders: Any = None,
+        session_artifact: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Reconcile persisted lineage against broker truth.  Never trades.
+
+        Broker positions and active orders are the only authority for current
+        quantity/existence.  Reconciliation never creates, submits, cancels, or
+        replaces an order; it only re-points in-memory lineage or drops stale
+        persisted state.
+        """
+        summary: dict[str, Any] = {
+            "matched": [],
+            "unmatched_persisted": [],
+            "unmatched_broker": [],
+            "dropped_positions": [],
+            "quantity_mismatches": [],
+            "legacy_unverifiable": [],
+        }
+        if broker_positions is None:
+            try:
+                broker_positions = self._broker_position_quantities()
+            except Exception:
+                broker_positions = None
+        if open_orders is None:
+            try:
+                open_orders = list(self.get_orders(statuses=Order.ACTIVE_STATUSES))
+            except Exception:
+                open_orders = []
+        open_orders = list(open_orders or [])
+        quantities = _normalize_position_quantities(broker_positions)
+
+        # Broker quantity/status is authoritative for held positions.
+        if quantities is not None:
+            for symbol, state in list(getattr(self, "_positions", {}).items()):
+                if symbol not in quantities:
+                    self._positions.pop(symbol, None)
+                    self._protective.pop(symbol, None)
+                    self._state_dict("_protective_meta").pop(symbol, None)
+                    self._protective_state.pop(symbol, None)
+                    self._state_dict("_pending_sell_meta").pop(symbol, None)
+                    self._pending_sells.discard(symbol)
+                    self._pending_sell_reason.pop(symbol, None)
+                    summary["unmatched_persisted"].append(symbol)
+                    summary["dropped_positions"].append(symbol)
+                    self._audit_stream("_diag").append({
+                        "event": "reconcile_position_dropped",
+                        "symbol": symbol,
+                        "persisted_quantity": state.get("quantity"),
+                    })
+                elif finite(state.get("quantity")) and not math.isclose(
+                    float(state["quantity"]), float(quantities[symbol]), rel_tol=1e-9, abs_tol=1e-9
+                ):
+                    summary["quantity_mismatches"].append({
+                        "symbol": symbol,
+                        "persisted": state.get("quantity"),
+                        "broker": float(quantities[symbol]),
+                    })
+                    self._audit_stream("_diag").append({
+                        "event": "reconcile_quantity_replaced_by_broker",
+                        "symbol": symbol,
+                        "persisted_quantity": state.get("quantity"),
+                        "broker_quantity": float(quantities[symbol]),
+                    })
+                    state["quantity"] = float(quantities[symbol])
+            for symbol, quantity in quantities.items():
+                if symbol not in getattr(self, "_positions", {}):
+                    # Broker-only position: record only broker-visible facts.
+                    self._positions[symbol] = {
+                        "quantity": float(quantity),
+                        "legacy_unverifiable": True,
+                    }
+                    summary["legacy_unverifiable"].append(symbol)
+                    self._audit_stream("_diag").append({
+                        "event": "reconcile_broker_only_position",
+                        "symbol": symbol,
+                        "broker_quantity": float(quantity),
+                    })
+
+        by_id = {str(getattr(order, "identifier", "") or ""): order for order in open_orders}
+
+        # Lineage index recovered from the session artifact for unmatched orders.
+        lineage_by_id: dict[str, dict[str, Any]] = {}
+        if isinstance(session_artifact, Mapping):
+            for event in session_artifact.get("lifecycle_trace") or []:
+                if not isinstance(event, Mapping):
+                    continue
+                if event.get("event") not in (
+                    "intent_created", "order_submitted", "protective_order_submitted",
+                ):
+                    continue
+                lineage = {
+                    "intent_id": event.get("intent_id"),
+                    "decision_id": event.get("decision_id"),
+                    "symbol": event.get("symbol"),
+                    "side": event.get("side"),
+                }
+                for identifier in (event.get("broker_order_id"), event.get("local_order_id")):
+                    if identifier:
+                        lineage_by_id[str(identifier)] = dict(lineage)
+
+        matched_ids: set[str] = set()
+
+        def _rebind_by_id(entry: Any) -> Any:
+            target_id = entry.get("broker_order_id") or entry.get("local_order_id")
+            if not target_id:
+                return None
+            return by_id.get(str(target_id))
+
+        def _artifact_supported_fallback(
+            symbol: str, *, buy: bool, entry: Mapping[str, Any]
+        ) -> Any:
+            """Use symbol/side fallback only with matching persisted artifact lineage."""
+            candidate = _match_open_order(open_orders, symbol, buy=buy)
+            if candidate is None:
+                return None
+            identifier = str(getattr(candidate, "identifier", "") or "")
+            lineage = lineage_by_id.get(identifier)
+            if not lineage:
+                return None
+            expected_side = "buy" if buy else "sell"
+            if lineage.get("symbol") != symbol or lineage.get("side") != expected_side:
+                return None
+            for key in ("intent_id", "decision_id"):
+                if entry.get(key) and lineage.get(key) != entry.get(key):
+                    return None
+            return candidate
+
+        for symbol, pending in list(getattr(self, "_pending_buys", {}).items()):
+            order = _rebind_by_id(pending)
+            if order is None:
+                order = _artifact_supported_fallback(symbol, buy=True, entry=pending)
+            if order is not None:
+                pending["order"] = order
+                pending["broker_order_id"] = str(getattr(order, "identifier", "") or "") or pending.get("broker_order_id")
+                matched_ids.add(str(getattr(order, "identifier", "") or ""))
+                summary["matched"].append(symbol)
+            else:
+                summary["unmatched_persisted"].append(symbol)
+                # Unresolved intent: drop it from claimed-active state and never
+                # automatically resubmit its decision.
+                decision_id = pending.get("decision_id")
+                if decision_id:
+                    processed = getattr(self, "_processed_decision_ids", None)
+                    if processed is None:
+                        processed = set()
+                        self._processed_decision_ids = processed
+                    processed.add(str(decision_id))
+                self._audit_stream("_diag").append({
+                    "event": "reconcile_pending_buy_without_open_order",
+                    "symbol": symbol,
+                    "broker_order_id": pending.get("broker_order_id"),
+                })
+                self._pending_buys.pop(symbol, None)
+                self._cancelled_pending_buys.pop(symbol, None)
+
+        for symbol, meta in list(getattr(self, "_pending_sell_meta", {}).items()):
+            order = _rebind_by_id(meta)
+            if order is None:
+                order = _artifact_supported_fallback(symbol, buy=False, entry=meta)
+            if order is not None:
+                meta["order"] = order
+                meta["broker_order_id"] = str(getattr(order, "identifier", "") or "") or meta.get("broker_order_id")
+                matched_ids.add(str(getattr(order, "identifier", "") or ""))
+                summary["matched"].append(symbol)
+            else:
+                summary["unmatched_persisted"].append(symbol)
+                self._audit_stream("_diag").append({
+                    "event": "reconcile_pending_sell_without_open_order",
+                    "symbol": symbol,
+                    "broker_order_id": meta.get("broker_order_id"),
+                })
+                decision_id = meta.get("decision_id")
+                if decision_id:
+                    self._processed_decision_ids.add(str(decision_id))
+                self._pending_sell_meta.pop(symbol, None)
+                self._pending_sells.discard(symbol)
+                self._pending_sell_reason.pop(symbol, None)
+                self._stop_exit_context.pop(symbol, None)
+
+        protective_meta = getattr(self, "_protective_meta", {}) or {}
+        if not protective_meta:
+            protective_meta = getattr(self, "_protective_state", {}) or {}
+        for symbol, meta in list(protective_meta.items()):
+            if not isinstance(meta, Mapping):
+                continue
+            order = _rebind_by_id(meta)
+            if order is None:
+                order = _artifact_supported_fallback(symbol, buy=False, entry=meta)
+            if order is not None:
+                self._protective[symbol] = order
+                merged = dict(meta)
+                merged["broker_order_id"] = str(getattr(order, "identifier", "") or "") or meta.get("broker_order_id")
+                self._state_dict("_protective_meta")[symbol] = merged
+                matched_ids.add(str(getattr(order, "identifier", "") or ""))
+                summary["matched"].append(symbol)
+            else:
+                summary["unmatched_persisted"].append(symbol)
+                self._audit_stream("_diag").append({
+                    "event": "reconcile_protective_order_missing",
+                    "symbol": symbol,
+                    "broker_order_id": meta.get("broker_order_id"),
+                })
+                decision_id = meta.get("decision_id")
+                if decision_id:
+                    self._processed_decision_ids.add(str(decision_id))
+                self._protective.pop(symbol, None)
+                self._state_dict("_protective_meta").pop(symbol, None)
+                self._protective_state.pop(symbol, None)
+                self._stop_gap_events.append({
+                    "event": "reconcile_protective_order_unresolved",
+                    "symbol": symbol,
+                    "broker_order_id": meta.get("broker_order_id"),
+                })
+
+        unmatched_broker_orders: dict[str, Any] = {}
+        for order in open_orders:
+            identifier = str(getattr(order, "identifier", "") or "")
+            if not identifier or identifier in matched_ids:
+                continue
+            lineage = lineage_by_id.get(identifier)
+            if lineage and lineage.get("intent_id"):
+                # Keep the symbol occupied but do not claim strategy ownership
+                # without an unambiguous artifact match.
+                summary["unmatched_broker"].append(identifier)
+            else:
+                summary["unmatched_broker"].append(identifier)
+            self._audit_stream("_diag").append({
+                "event": "reconcile_broker_order_without_persisted_lineage",
+                "broker_order_id": identifier,
+                "recovered_intent_id": (lineage or {}).get("intent_id"),
+            })
+            symbol = str(getattr(getattr(order, "asset", None), "symbol", "") or "")
+            if symbol:
+                unmatched_broker_orders[symbol] = order
+        self._unmatched_broker_orders = unmatched_broker_orders
+
+        # Rebuild the order index only after broker orders are rebound.
+        index: dict[str, dict[str, Any]] = {}
+        for symbol, pending in getattr(self, "_pending_buys", {}).items():
+            order = pending.get("order")
+            if order is not None:
+                index[str(getattr(order, "identifier", "") or "")] = {
+                    "intent_id": pending.get("intent_id"),
+                    "decision_id": pending.get("decision_id"),
+                    "symbol": symbol,
+                    "side": "buy",
+                }
+        for symbol, meta in getattr(self, "_pending_sell_meta", {}).items():
+            order = meta.get("order")
+            if order is not None:
+                index[str(getattr(order, "identifier", "") or "")] = {
+                    "intent_id": meta.get("intent_id"),
+                    "decision_id": meta.get("decision_id"),
+                    "symbol": symbol,
+                    "side": "sell",
+                }
+        for symbol, order in getattr(self, "_protective", {}).items():
+            meta = getattr(self, "_protective_meta", {}).get(symbol, {})
+            index[str(getattr(order, "identifier", "") or "")] = {
+                "intent_id": meta.get("intent_id"),
+                "decision_id": meta.get("decision_id"),
+                "symbol": symbol,
+                "side": "sell",
+            }
+        self._order_index = index
+
+        self._persistence_checkpoint("startup_reconciled")
+        return summary
+
+    def _session_end_snapshot(self) -> dict[str, Any]:
+        try:
+            day = str(self._current_day())
+        except Exception:
+            day = None
+        return {
+            "event": "session_end",
+            "session": day,
+            "equity": float(getattr(self, "_portfolio_value", 0.0) or 0.0),
+            "cash": float(getattr(self, "_cash", 0.0) or 0.0),
+            "complete": True,
+        }
+
+    def after_market_closes(self) -> dict[str, Any]:
+        snapshot = self._session_end_snapshot()
+        self._audit_stream("_session_end_events").append(snapshot)
+        self._persistence_checkpoint("after_market_closes")
+        return snapshot
+
+    def on_strategy_end(self) -> None:
+        self._persistence_checkpoint("on_strategy_end")
+
+    def on_abrupt_closing(self) -> None:
+        self._persistence_checkpoint("on_abrupt_closing")
 
     # -- data helpers ---------------------------------------------------------
     @staticmethod
@@ -805,11 +1363,63 @@ class RegistryHtsStrategy(Strategy):
             mandatory_held=tuple(mandatory_held),
         )
         self._ranks = dict(selection.ranks)
+        try:
+            self._record_selection_event(day, session, rows, scores, selection, mandatory_held)
+        except Exception:
+            pass
         return selection.holdings
+
+    def _record_selection_event(self, day: Any, session: Any, rows: Mapping[str, pd.Series],
+                                scores: Mapping[str, float], selection: Any,
+                                mandatory_held: Sequence[str] = ()) -> None:
+        rank_inputs: dict[str, Any] = {}
+        for symbol, row in rows.items():
+            values: dict[str, Any] = {}
+            for column in ("ret", "close", "sma", "mdv", "vol20"):
+                value = row.get(column)
+                values[column] = float(value) if finite(value) else None
+            rank_inputs[symbol] = values
+        ranked_symbols = [symbol for symbol, _score in sorted(
+            scores.items(), key=lambda item: (-item[1], self._universe_order.get(item[0], 0))
+        )]
+        correlation_cap = self._params.get("correlation_screen")
+        pairwise: dict[str, float] = {}
+        if correlation_cap is not None:
+            for index, first in enumerate(ranked_symbols):
+                for second in ranked_symbols[index + 1:]:
+                    value = self._correlation(first, second, session)
+                    if finite(value):
+                        pairwise[f"{first}|{second}"] = float(value)
+        exposure_limit = self._params.get("exposure_group_limit")
+        exposure_groups = (
+            {symbol: exposure_group(symbol) for symbol in rows}
+            if exposure_limit is not None else {}
+        )
+        event = {
+            "event": "selection",
+            "decision_id": self._current_decision_id(),
+            "day": str(day),
+            "signal_session": str(session),
+            "rank_mode": str(self._params.get("rank_score")),
+            "rank_input_rows": rank_inputs,
+            "rank_scores": {symbol: float(value) for symbol, value in scores.items()},
+            "ordinal_ranks": dict(selection.ranks),
+            "ranked_symbols": ranked_symbols,
+            "held_symbols": sorted(self._positions),
+            "mandatory_held_symbols": list(mandatory_held),
+            "exposure_groups": exposure_groups,
+            "pairwise_correlations": pairwise,
+            "selected_symbols": list(selection.holdings),
+        }
+        maybe_capture = getattr(self, "_decision_capture", None)
+        if isinstance(maybe_capture, dict):
+            maybe_capture["selection"] = event
+        self._record_event(dict(event))
 
     # -- orders ---------------------------------------------------------------
     def _cancel_protective(self, symbol: str) -> None:
         order = self._protective.pop(symbol, None)
+        self._state_dict("_protective_meta").pop(symbol, None)
         if order is None:
             return
         try:
@@ -820,6 +1430,81 @@ class RegistryHtsStrategy(Strategy):
         except Exception:
             pass
 
+    def _resolve_decision_id(self, explicit: str | None) -> str:
+        """Resolve the decision that owns a new order without reusing stale IDs."""
+        if explicit:
+            return str(explicit)
+        scope = getattr(self, "_submission_scope_decision_id", None)
+        if scope:
+            return str(scope)
+        active = getattr(self, "_active_decision_id", None)
+        processed = getattr(self, "_processed_decision_ids", None) or set()
+        if active and str(active) not in processed:
+            return str(active)
+        return self._new_decision_id()
+
+    def _decision_submission_suppressed(self, decision_id: str) -> bool:
+        processed = getattr(self, "_processed_decision_ids", None) or set()
+        scope = getattr(self, "_submission_scope_decision_id", None)
+        return str(decision_id) in processed and str(decision_id) != str(scope)
+
+    def _has_decision_snapshot(self, decision_id: str) -> bool:
+        return any(
+            str(snapshot.get("decision_id") or "") == str(decision_id)
+            for snapshot in self._audit_stream("_decision_snapshots")
+            if isinstance(snapshot, Mapping)
+        )
+
+    def _ensure_direct_order_snapshot(
+        self,
+        *,
+        decision_id: str,
+        symbol: str,
+        side: str,
+        quantity: float,
+        reference: float | None,
+        intent_id: str,
+        reason: str,
+    ) -> None:
+        """Commit evidence for a reactive/direct order before broker contact."""
+        if self._has_decision_snapshot(decision_id):
+            return
+        try:
+            now = pd.Timestamp(self.get_datetime())
+        except Exception:
+            # Lightweight offline harnesses may not initialize a broker clock.
+            # Audit construction stays fail-open and must not alter order flow.
+            now = pd.Timestamp(datetime.now(timezone.utc))
+        day = now.date()
+        hour = int(now.hour)
+        intended_notional = None
+        if reference is not None and finite(reference):
+            intended_notional = float(quantity) * float(reference)
+        self._emit_decision_snapshot(
+            day,
+            hour,
+            decision_id,
+            "reactive_order",
+            reason,
+            [{
+                "symbol": symbol,
+                "side": side,
+                "requested_quantity": float(quantity),
+                "reference_price": reference,
+                "intended_notional": intended_notional,
+                "budget_before": None,
+                "budget_after": None,
+                "intent_id": intent_id,
+                "reason": reason,
+            }],
+        )
+        processed = getattr(self, "_processed_decision_ids", None)
+        if processed is None:
+            processed = set()
+            self._processed_decision_ids = processed
+        processed.add(str(decision_id))
+        self._persistence_checkpoint("decision_committed")
+
     def _submit_sell(
         self,
         symbol: str,
@@ -827,39 +1512,172 @@ class RegistryHtsStrategy(Strategy):
         reference: float,
         *,
         stop_context: Mapping[str, Any] | None = None,
-    ) -> None:
+        decision_id: str | None = None,
+        intent_id: str | None = None,
+    ) -> str | None:
         state = self._positions.get(symbol)
         if state is None or symbol in self._pending_sells:
-            return
+            return None
+        resolved_decision = self._resolve_decision_id(decision_id)
+        if self._decision_submission_suppressed(resolved_decision):
+            self._audit_stream("_diag").append({
+                "event": "duplicate_decision_suppressed",
+                "decision_id": resolved_decision,
+                "symbol": symbol,
+                "side": "sell",
+            })
+            return None
+        resolved_intent = intent_id or f"sell-{symbol}-{self._next_sequence('_intent_sequence')}"
+        self._ensure_direct_order_snapshot(
+            decision_id=resolved_decision,
+            symbol=symbol,
+            side="sell",
+            quantity=float(state["quantity"]),
+            reference=reference,
+            intent_id=resolved_intent,
+            reason=reason,
+        )
         self._cancel_protective(symbol)
         order = self.create_order(symbol, quantity=state["quantity"], side="sell", order_type="market")
         self._pending_sells.add(symbol)
         self._pending_sell_reason[symbol] = reason
+        local_order_id = str(getattr(order, "identifier", "") or "")
+        meta = {
+            "intent_id": resolved_intent,
+            "decision_id": resolved_decision,
+            "symbol": symbol,
+            "side": "sell",
+            "local_order_id": local_order_id,
+            "broker_order_id": None,
+            "requested_quantity": float(state["quantity"]),
+            "reason": reason,
+            "cumulative_filled_quantity": 0.0,
+            "last_fill_event_quantity": 0.0,
+            "order": order,
+        }
+        self._state_dict("_pending_sell_meta")[symbol] = meta
+        self._order_meta_store(order, {
+            "intent_id": resolved_intent,
+            "decision_id": resolved_decision,
+            "symbol": symbol,
+            "side": "sell",
+        })
+        self._record_lifecycle_event({
+            "event": "intent_created",
+            "symbol": symbol,
+            "side": "sell",
+            "intent_id": resolved_intent,
+            "decision_id": resolved_decision,
+            "local_order_id": local_order_id,
+            "broker_order_id": None,
+            "requested_quantity": float(state["quantity"]),
+            "reference_price": float(reference) if reference is not None else None,
+            "reason": reason,
+        })
         if stop_context is not None:
             context = dict(stop_context)
             context["order_id"] = str(order.identifier)
             self._stop_exit_context[symbol] = context
-            self._lifecycle_trace.append({
+            self._record_lifecycle_event({
                 "event": "virtual_stop_submitted",
                 "symbol": symbol,
+                "side": "sell",
+                "intent_id": resolved_intent,
+                "decision_id": resolved_decision,
                 "order_id": context["order_id"],
+                "broker_order_id": context["order_id"],
                 "engine_time": context["engine_time"],
                 "completed_source_bar": context["trigger_timestamp"],
                 "submission_time": context["submission_time"],
                 "source_fill_bar": context["source_fill_bar"],
             })
-        self.submit_order(order)
+        self._persistence_checkpoint("intent_created")
+        try:
+            self.submit_order(order)
+        except Exception as error:
+            self.on_error_order(order, error)
+            raise
+        self._persistence_checkpoint("order_submitted")
         self._journal.append({"event": "intent", "side": "sell", "symbol": symbol,
                               "reason": reason, "reference": reference})
+        return resolved_intent
 
-    def _submit_buy(self, symbol: str, quantity: float, reference: float, atr: float, reason: str) -> None:
+    def _submit_buy(
+        self,
+        symbol: str,
+        quantity: float,
+        reference: float,
+        atr: float,
+        reason: str,
+        *,
+        decision_id: str | None = None,
+        intent_id: str | None = None,
+    ) -> str | None:
         if symbol in self._pending_buys:
-            return
+            return None
+        resolved_decision = self._resolve_decision_id(decision_id)
+        if self._decision_submission_suppressed(resolved_decision):
+            self._audit_stream("_diag").append({
+                "event": "duplicate_decision_suppressed",
+                "decision_id": resolved_decision,
+                "symbol": symbol,
+            })
+            return None
+        resolved_intent = intent_id or f"buy-{symbol}-{self._next_sequence('_intent_sequence')}"
+        self._ensure_direct_order_snapshot(
+            decision_id=resolved_decision,
+            symbol=symbol,
+            side="buy",
+            quantity=float(quantity),
+            reference=reference,
+            intent_id=resolved_intent,
+            reason=reason,
+        )
         order = self.create_order(symbol, quantity=quantity, side="buy", order_type="market")
-        self._pending_buys[symbol] = {"quantity": quantity, "atr": atr, "order": order}
-        self.submit_order(order)
+        local_order_id = str(getattr(order, "identifier", "") or "")
+        self._pending_buys[symbol] = {
+            "quantity": quantity,
+            "atr": atr,
+            "order": order,
+            "requested_quantity": float(quantity),
+            "event_time_atr": float(atr),
+            "intent_id": resolved_intent,
+            "decision_id": resolved_decision,
+            "local_order_id": local_order_id,
+            "broker_order_id": None,
+            "cumulative_filled_quantity": 0.0,
+            "last_fill_event_quantity": 0.0,
+            "reason": reason,
+        }
+        self._order_meta_store(order, {
+            "intent_id": resolved_intent,
+            "decision_id": resolved_decision,
+            "symbol": symbol,
+            "side": "buy",
+        })
+        self._record_lifecycle_event({
+            "event": "intent_created",
+            "symbol": symbol,
+            "side": "buy",
+            "intent_id": resolved_intent,
+            "decision_id": resolved_decision,
+            "local_order_id": local_order_id,
+            "broker_order_id": None,
+            "requested_quantity": float(quantity),
+            "reference_price": float(reference),
+            "event_time_atr": float(atr),
+            "reason": reason,
+        })
+        self._persistence_checkpoint("intent_created")
+        try:
+            self.submit_order(order)
+        except Exception as error:
+            self.on_error_order(order, error)
+            raise
+        self._persistence_checkpoint("order_submitted")
         self._journal.append({"event": "intent", "side": "buy", "symbol": symbol,
                               "quantity": quantity, "reason": reason, "reference": reference})
+        return resolved_intent
 
     def _cancel_pending_buys(self, *, reason: str) -> int:
         """Send explicit cancels for every pending buy before a global flatten."""
@@ -922,9 +1740,51 @@ class RegistryHtsStrategy(Strategy):
         if not finite(level) or float(level) <= 0.0:
             return
         order = self.create_order(symbol, quantity=state["quantity"], side="sell", stop_price=float(level))
-        self.submit_order(order)
+        local_order_id = str(getattr(order, "identifier", "") or "")
+        parent_intent = state.get("entry_intent_id")
+        decision_id = state.get("entry_decision_id") or self._current_decision_id()
+        protective_meta = {
+            "intent_id": f"prot-{symbol}-{self._next_sequence('_intent_sequence')}",
+            "decision_id": decision_id,
+            "symbol": symbol,
+            "side": "sell",
+            "parent_entry_intent_id": parent_intent,
+            "parent_decision_id": decision_id,
+            "broker_order_id": None,
+            "local_order_id": local_order_id,
+            "quantity": float(getattr(order, "quantity", 0.0) or 0.0),
+            "level": float(level),
+        }
+        # Make the callback/rejection lineage authoritative before broker
+        # contact.  A synchronous callback must never observe an unindexed stop.
         self._protective[symbol] = order
         state["protective_level"] = float(level)
+        self._state_dict("_protective_meta")[symbol] = protective_meta
+        self._order_meta_store(order, {
+            "intent_id": protective_meta["intent_id"],
+            "decision_id": decision_id,
+            "symbol": symbol,
+            "side": "sell",
+        })
+        self._record_lifecycle_event({
+            "event": "protective_order_submitted",
+            "symbol": symbol,
+            "side": "sell",
+            "order_id": local_order_id,
+            "broker_order_id": local_order_id,
+            "intent_id": protective_meta["intent_id"],
+            "quantity": float(getattr(order, "quantity", 0.0) or 0.0),
+            "level": float(level),
+            "parent_entry_intent_id": parent_intent,
+            "decision_id": decision_id,
+        })
+        self._persistence_checkpoint("protective_intent_created")
+        try:
+            self.submit_order(order)
+        except Exception as error:
+            self.on_error_order(order, error)
+            raise
+        self._persistence_checkpoint("protective_order")
         self._journal.append({"event": "protective_order", "symbol": symbol,
                               "level": float(level), "mode": mode})
 
@@ -951,7 +1811,7 @@ class RegistryHtsStrategy(Strategy):
         execution_price = self._execution_price(symbol, stamp)
         trigger_stamp = pd.Timestamp(row.name)
         if execution_price is None:
-            self._lifecycle_trace.append({
+            self._record_event({
                 "event": "virtual_stop_deferred_no_executable_bar",
                 "symbol": symbol,
                 "engine_time": pd.Timestamp(engine_time).isoformat(),
@@ -1158,24 +2018,309 @@ class RegistryHtsStrategy(Strategy):
                         and float(post_weight) < float(pre_cap[symbol])
                     ),
                 })
-        return apply_leveraged_cap(
+        final = apply_leveraged_cap(
             weights,
             leveraged_symbols=[symbol for symbol in selected if symbol in LEVERAGED_PRODUCTS],
             cap=self._params["leveraged_cap"],
         )
+        try:
+            self._record_allocation_event(
+                day, hour, selected, pre_cap, weights, final, atr, price, covariance, volatility,
+                mode,
+            )
+        except Exception:
+            pass
+        return final
+
+    def _record_allocation_event(self, day: Any, hour: int, selected: Sequence[str],
+                                 pre_cap: Mapping[str, float], post_cap: Mapping[str, float],
+                                 final: Mapping[str, float], atr: Mapping[str, float],
+                                 price: Mapping[str, float], covariance: Any,
+                                 volatility: Mapping[str, float] | None = None,
+                                 mode: str = "equal-slots") -> None:
+        matrix = None
+        if covariance is not None:
+            try:
+                matrix = [[float(value) for value in row] for row in covariance]
+            except TypeError:
+                matrix = None
+        full_snapshot = {
+            symbol: float(value) for symbol, value in price.items() if finite(value)
+        }
+        quote = getattr(self, "_last_quote_snapshot", None)
+        if isinstance(quote, Mapping) and isinstance(quote.get("prices"), Mapping):
+            captured = {
+                symbol: float(value)
+                for symbol, value in quote["prices"].items() if finite(value)
+            }
+            if captured:
+                full_snapshot = captured
+        allocation: dict[str, Any] = {
+            "selected_order": list(selected),
+            "event_time_atr": {
+                symbol: float(value) for symbol, value in atr.items() if finite(value) and float(value) > 0.0
+            },
+            "executable_prices": {
+                symbol: float(value) for symbol, value in price.items() if finite(value) and float(value) > 0.0
+            },
+            "full_live_price_snapshot": full_snapshot,
+            "volatility_inputs": {
+                symbol: float(value) if finite(value) else None
+                for symbol, value in (volatility or {}).items()
+            },
+            "covariance_symbols": list(selected) if matrix is not None else None,
+            "covariance_matrix": matrix,
+            "pre_risk_contribution_cap_weights": {
+                symbol: float(value) for symbol, value in pre_cap.items()
+            },
+            "post_risk_contribution_cap_weights": {
+                symbol: float(value) for symbol, value in post_cap.items()
+            },
+            "final_weights_after_leveraged_cap": {
+                symbol: float(value) for symbol, value in final.items()
+            },
+            "risk_contribution_cap": self._params.get("risk_contribution_cap"),
+            "risk_cap_binding_by_symbol": {
+                symbol: float(post_cap.get(symbol, 0.0)) < float(pre_cap.get(symbol, 0.0))
+                for symbol in selected
+            },
+            "risk_cap_bound_any": any(
+                float(post_cap.get(symbol, 0.0)) < float(pre_cap.get(symbol, 0.0))
+                for symbol in selected
+            ),
+        }
+        if str(mode) == "vol-target" and covariance is not None and selected:
+            base = {symbol: 1.0 / len(selected) for symbol in selected}
+            allocation.update({
+                "base_forecast_volatility": forecast_volatility(base, covariance),
+                "pre_cap_forecast_volatility": forecast_volatility(pre_cap, covariance),
+                "post_cap_forecast_volatility": forecast_volatility(final, covariance),
+            })
+        if matrix is None and str(mode) != "vol-target":
+            allocation["covariance_not_required"] = (
+                f"weight_mode {mode!r} does not consume covariance"
+            )
+        event = {
+            "event": "allocation",
+            "decision_id": self._current_decision_id(),
+            "day": str(day),
+            "hour": hour,
+            **allocation,
+        }
+        maybe_capture = getattr(self, "_decision_capture", None)
+        if isinstance(maybe_capture, dict):
+            maybe_capture["allocation"] = allocation
+        self._record_event(dict(event))
 
     def _rebalance(self, day: Any, hour: int) -> None:
+        decision_id = self._current_decision_id()
+        processed = getattr(self, "_processed_decision_ids", None)
+        if processed is None:
+            processed = set()
+            self._processed_decision_ids = processed
+        if decision_id in processed:
+            # Exactly-once protection: a committed decision is never re-submitted.
+            self._audit_stream("_diag").append({
+                "event": "duplicate_decision_suppressed",
+                "decision_id": decision_id,
+                "day": str(day),
+                "hour": hour,
+            })
+            return
+
+        # First calculate the complete order batch without touching the broker.
+        # Stable intent IDs allocated here are reused verbatim after the full
+        # decision snapshot has been checkpointed.
+        planned_orders: list[dict[str, Any]] = []
+        submission_actions: list[dict[str, Any]] = []
+        synthetic_pending_sells: set[str] = set()
+        original_submit_buy = self._submit_buy
+        original_submit_sell = self._submit_sell
+
+        def capture_buy(
+            symbol: str,
+            quantity: float,
+            reference: float,
+            atr: float,
+            reason: str,
+            *,
+            decision_id: str | None = None,
+            intent_id: str | None = None,
+        ) -> str:
+            resolved_decision = str(decision_id or self._current_decision_id())
+            resolved_intent = intent_id or f"buy-{symbol}-{self._next_sequence('_intent_sequence')}"
+            submission_actions.append({
+                "side": "buy",
+                "symbol": symbol,
+                "quantity": float(quantity),
+                "reference": float(reference),
+                "atr": float(atr),
+                "reason": str(reason),
+                "decision_id": resolved_decision,
+                "intent_id": resolved_intent,
+            })
+            return resolved_intent
+
+        def capture_sell(
+            symbol: str,
+            reason: str,
+            reference: float,
+            *,
+            stop_context: Mapping[str, Any] | None = None,
+            decision_id: str | None = None,
+            intent_id: str | None = None,
+        ) -> str | None:
+            state = self._positions.get(symbol)
+            if state is None or symbol in self._pending_sells:
+                return None
+            resolved_decision = str(decision_id or self._current_decision_id())
+            resolved_intent = intent_id or f"sell-{symbol}-{self._next_sequence('_intent_sequence')}"
+            submission_actions.append({
+                "side": "sell",
+                "symbol": symbol,
+                "reference": float(reference),
+                "reason": str(reason),
+                "stop_context": dict(stop_context) if stop_context is not None else None,
+                "decision_id": resolved_decision,
+                "intent_id": resolved_intent,
+            })
+            # Preserve the existing pending-exit slot invariant during planning
+            # without mutating restartable order lineage.
+            self._pending_sells.add(symbol)
+            self._pending_sell_reason[symbol] = str(reason)
+            synthetic_pending_sells.add(symbol)
+            return resolved_intent
+
+        try:
+            if bool(getattr(self, "_risk_off_active", False)):
+                stamp = self._stamp(day, hour)
+                symbols = sorted(self._positions)
+                for symbol in symbols:
+                    if symbol in self._pending_sells:
+                        continue
+                    state = self._positions[symbol]
+                    reference = self._execution_price(symbol, stamp)
+                    intent_id = f"sell-{symbol}-{self._next_sequence('_intent_sequence')}"
+                    submission_actions.append({
+                        "side": "sell",
+                        "symbol": symbol,
+                        "reference": float(reference) if reference is not None else float("nan"),
+                        "reason": "global_risk_off",
+                        "stop_context": None,
+                        "decision_id": decision_id,
+                        "intent_id": intent_id,
+                    })
+                    planned_orders.append({
+                        "symbol": symbol,
+                        "side": "sell",
+                        "requested_quantity": float(state["quantity"]),
+                        "reference_price": reference,
+                        "intended_notional": None,
+                        "budget_before": None,
+                        "budget_after": None,
+                        "intent_id": intent_id,
+                        "reason": "global_risk_off",
+                    })
+                outcome, outcome_reason = "risk_off", "global risk-off flatten"
+            else:
+                self._submit_buy = capture_buy
+                self._submit_sell = capture_sell
+                outcome, outcome_reason = self._execute_rebalance(
+                    day, hour, decision_id, planned_orders
+                )
+        finally:
+            self._submit_buy = original_submit_buy
+            self._submit_sell = original_submit_sell
+            for symbol in synthetic_pending_sells:
+                self._pending_sells.discard(symbol)
+                self._pending_sell_reason.pop(symbol, None)
+
+        # Snapshot and checkpoint the pre-submission book before any create,
+        # cancel, or submit call can reach the broker boundary.
+        self._emit_decision_snapshot(
+            day, hour, decision_id, outcome, outcome_reason, planned_orders
+        )
+        processed.add(decision_id)
+        self._persistence_checkpoint("decision_committed")
+
+        self._submission_scope_decision_id = decision_id
+        try:
+            if bool(getattr(self, "_risk_off_active", False)):
+                self._cancel_pending_buys(reason="global_risk_off")
+            for action in submission_actions:
+                if action["side"] == "sell":
+                    try:
+                        original_submit_sell(
+                            action["symbol"],
+                            action["reason"],
+                            action["reference"],
+                            stop_context=action["stop_context"],
+                            decision_id=action["decision_id"],
+                            intent_id=action["intent_id"],
+                        )
+                    except TypeError as error:
+                        if "unexpected keyword argument" not in str(error):
+                            raise
+                        original_submit_sell(
+                            action["symbol"], action["reason"], action["reference"]
+                        )
+                else:
+                    try:
+                        original_submit_buy(
+                            action["symbol"],
+                            action["quantity"],
+                            action["reference"],
+                            action["atr"],
+                            action["reason"],
+                            decision_id=action["decision_id"],
+                            intent_id=action["intent_id"],
+                        )
+                    except TypeError as error:
+                        # Small policy harnesses historically replace the submit
+                        # hook with a positional-only recorder.  The real method
+                        # still receives explicit decision/intent ownership.
+                        if "unexpected keyword argument" not in str(error):
+                            raise
+                        original_submit_buy(
+                            action["symbol"],
+                            action["quantity"],
+                            action["reference"],
+                            action["atr"],
+                            action["reason"],
+                        )
+        finally:
+            self._submission_scope_decision_id = None
+
+    def _execute_rebalance(
+        self, day: Any, hour: int, decision_id: str, planned_orders: list[dict[str, Any]],
+    ) -> tuple[str, str | None]:
+        """Calculate, plan, and submit one rebalance.  Returns its outcome."""
         if bool(getattr(self, "_risk_off_active", False)):
             self._selected = ()
             self._flatten_risk_off(day, hour)
-            return
+            return "risk_off", "global risk-off flatten"
         stamp = self._stamp(day, hour)
         target = set(self._selected)
         for symbol in list(self._positions):
             if symbol not in target:
                 price = self._execution_price(symbol, stamp)
-                self._submit_sell(symbol, "selection_change",
-                                  price if price is not None else float("nan"))
+                intent_id = self._submit_sell(
+                    symbol, "selection_change",
+                    price if price is not None else float("nan"),
+                    decision_id=decision_id,
+                )
+                if intent_id:
+                    planned_orders.append({
+                        "symbol": symbol,
+                        "side": "sell",
+                        "requested_quantity": float(self._positions.get(symbol, {}).get("quantity", 0.0)),
+                        "reference_price": price if price is not None else None,
+                        "intended_notional": None,
+                        "budget_before": None,
+                        "budget_after": None,
+                        "intent_id": intent_id,
+                        "reason": "selection_change",
+                    })
         try:
             self.update_broker_balances(force_update=True)
         except Exception:
@@ -1210,8 +2355,14 @@ class RegistryHtsStrategy(Strategy):
                 "hour": hour,
                 "pending_sells": sorted(self._pending_sells),
             })
-            return
-        occupied = set(self._positions) | set(self._pending_buys)
+            return "pending_exit", "pending exit occupies its slot"
+        if not self._selected:
+            return "no_op", "no selected symbols"
+        occupied = (
+            set(self._positions)
+            | set(self._pending_buys)
+            | set(getattr(self, "_unmatched_broker_orders", {}) or {})
+        )
         for symbol in self._selected:
             if symbol in occupied:
                 continue
@@ -1261,12 +2412,116 @@ class RegistryHtsStrategy(Strategy):
                 self._rejections.append({"symbol": symbol, "reason": "insufficient_budget",
                                          "day": str(day), "hour": hour})
                 continue
+            budget_before = budget
             budget -= quantity * effective_price
             self._diag[-1]["buys"].append({
                 "symbol": symbol, "price": price, "quantity": quantity,
                 "notional": quantity * price, "budget_after": budget,
             })
-            self._submit_buy(symbol, quantity, price, atr, "selection_entry")
+            intent_id = self._submit_buy(
+                symbol, quantity, price, atr, "selection_entry",
+                decision_id=decision_id,
+            )
+            if intent_id:
+                planned_orders.append({
+                    "symbol": symbol,
+                    "side": "buy",
+                    "requested_quantity": float(quantity),
+                    "reference_price": price,
+                    "intended_notional": float(notional),
+                    "budget_before": float(budget_before),
+                    "budget_after": float(budget),
+                    "intent_id": intent_id,
+                    "reason": "selection_entry",
+                })
+        if not planned_orders:
+            return "no_op", "no executable orders this decision"
+        return "executed", None
+
+    def _audit_parameters(self) -> dict[str, Any]:
+        params = getattr(self, "_params", {}) or {}
+        return {
+            "weight_mode": params.get("weight_mode"),
+            "gross_target": params.get("gross_target"),
+            "per_symbol_cap": params.get("per_symbol_cap"),
+            "atr_k": params.get("atr_k"),
+            "stop_distance_budget": params.get("stop_distance_budget"),
+            "vol_target": params.get("vol_target"),
+            "risk_contribution_cap": params.get("risk_contribution_cap"),
+            "leveraged_cap": params.get("leveraged_cap"),
+            "top_n": params.get("top_n"),
+            "rank_buffer": params.get("rank_buffer"),
+            "exposure_group_limit": params.get("exposure_group_limit"),
+            "correlation_screen": params.get("correlation_screen"),
+            "universe_symbols": list(getattr(self, "_ordered", ()) or params.get("universe_symbols") or ()),
+        }
+
+    def _aware_stamp(self, day: Any, hour: int) -> pd.Timestamp:
+        stamp = pd.Timestamp(day) + pd.Timedelta(hours=hour)
+        if stamp.tzinfo is None:
+            stamp = stamp.tz_localize("America/New_York")
+        return stamp
+
+    def _emit_decision_snapshot(
+        self, day: Any, hour: int, decision_id: str, outcome: str,
+        outcome_reason: str | None, planned_orders: Sequence[Mapping[str, Any]],
+    ) -> None:
+        """Assemble and append one full decision snapshot.  Never alters trading."""
+        try:
+            capture = getattr(self, "_decision_capture", None)
+            if not isinstance(capture, dict) or capture.get("decision_id") != decision_id:
+                capture = {"decision_id": decision_id, "selection": None, "allocation": None}
+            quote = getattr(self, "_last_quote_snapshot", None)
+            quote_captured = None
+            if isinstance(quote, Mapping):
+                quote_captured = quote.get("captured_at")
+            session = self._previous_session(day)
+            snapshot = build_decision_snapshot(
+                identity={**self._audit_identity_fields(), "decision_id": decision_id},
+                time={
+                    "session": str(day),
+                    "signal_session": str(session) if session is not None else None,
+                    "native_iteration_time": self._stamp(day, hour).isoformat(),
+                    "logical_rebalance_time": self._aware_stamp(day, hour).isoformat(),
+                    "quote_snapshot_captured_at": quote_captured or self._event_time_iso(),
+                    "timezone": "America/New_York",
+                    "hourly_convention": HTS_HOURLY_CONVENTION,
+                },
+                selection=capture.get("selection") or {},
+                allocation=capture.get("allocation") or {},
+                account={
+                    "cash": float(self.cash or 0.0),
+                    "portfolio_value": float(self.portfolio_value or 0.0),
+                    "fee_rate": float(self._params.get("cost_bps_per_side", 0.0)) / 10_000.0,
+                },
+                book={
+                    "existing_positions": sorted(getattr(self, "_positions", {}) or {}),
+                    "pending_buys": sorted(getattr(self, "_pending_buys", {}) or {}),
+                    "pending_sells": sorted(getattr(self, "_pending_sells", None) or ()),
+                    "occupied_symbols": sorted(
+                        set(getattr(self, "_positions", {}) or {})
+                        | set(getattr(self, "_pending_buys", {}) or {})
+                    ),
+                },
+                planned_orders=planned_orders,
+                parameters=self._audit_parameters(),
+                outcome=outcome,
+                outcome_reason=outcome_reason,
+            )
+            self._audit_stream("_decision_snapshots").append(snapshot)
+            self._audit_stream("_journal").append({
+                "event": "decision_emitted",
+                "decision_id": decision_id,
+                "outcome": outcome,
+                "planned_orders": len(list(planned_orders)),
+            })
+        except Exception as error:
+            self._audit_stream("_diag").append({
+                "event": "decision_snapshot_failed",
+                "decision_id": decision_id,
+                "error": type(error).__name__,
+                "reason": str(error),
+            })
 
     def _queue_rebalance_after_last_observable_iteration(self, day: Any, logical_hour: int) -> None:
         """Plan a logical 15:00 rebalance without permitting a 14:00 fill.
@@ -1290,14 +2545,27 @@ class RegistryHtsStrategy(Strategy):
         original_submit_sell = self._submit_sell
         original_execution_price = self._execution_price
 
-        def capture_buy(symbol: str, quantity: float, reference: float, atr: float, reason: str) -> None:
+        def capture_buy(
+            symbol: str,
+            quantity: float,
+            reference: float,
+            atr: float,
+            reason: str,
+            *,
+            decision_id: str | None = None,
+            intent_id: str | None = None,
+        ) -> str:
+            resolved = intent_id or f"buy-{symbol}-{self._next_sequence('_intent_sequence')}"
             captured_buys.append({
                 "symbol": symbol,
                 "quantity": float(quantity),
                 "reference": float(reference),
                 "atr": float(atr),
                 "reason": reason,
+                "intent_id": resolved,
+                "decision_id": decision_id or self._current_decision_id(),
             })
+            return resolved
 
         def capture_sell(
             symbol: str,
@@ -1305,15 +2573,25 @@ class RegistryHtsStrategy(Strategy):
             reference: float,
             *,
             stop_context: Mapping[str, Any] | None = None,
-        ) -> None:
+            decision_id: str | None = None,
+            intent_id: str | None = None,
+        ) -> str | None:
             if symbol not in self._positions or symbol in self._pending_sells:
-                return
+                return None
             # Match `_rebalance`'s pending-exit slot invariant without sending
             # the order early.  The marker is removed before this method exits.
             self._pending_sells.add(symbol)
             self._pending_sell_reason[symbol] = reason
             synthetic_pending_sells.add(symbol)
-            captured_sells.append({"symbol": symbol, "reason": reason, "reference": float(reference)})
+            resolved = intent_id or f"sell-{symbol}-{self._next_sequence('_intent_sequence')}"
+            captured_sells.append({
+                "symbol": symbol,
+                "reason": reason,
+                "reference": float(reference),
+                "intent_id": resolved,
+                "decision_id": decision_id or self._current_decision_id(),
+            })
+            return resolved
 
         def completed_source_price(symbol: str, stamp: pd.Timestamp) -> float | None:
             """Price a deferred decision from its completed source bar only."""
@@ -1345,10 +2623,13 @@ class RegistryHtsStrategy(Strategy):
         self._deferred_rebalance = {
             "kind": "rebalance",
             "decision_day": str(day),
+            "decision_id": self._current_decision_id(),
             "logical_rebalance_hour": logical_hour,
+            "submission_started": False,
             "buys": captured_buys,
             "sells": captured_sells,
         }
+        self._persistence_checkpoint("deferred_rebalance_queued")
         event = {
             "event": "deferred_rebalance_queued",
             "decision_day": str(day),
@@ -1366,11 +2647,46 @@ class RegistryHtsStrategy(Strategy):
 
     def _queue_risk_off_flatten_after_last_observable_iteration(self, day: Any, logical_hour: int) -> None:
         """Queue a risk-off flatten so it cannot fill at the earlier 14:00 open."""
+        captured_sells: list[dict[str, Any]] = []
+        original_submit_sell = self._submit_sell
+        original_cancel_pending_buys = self._cancel_pending_buys
+
+        def capture_sell(
+            symbol: str,
+            reason: str,
+            reference: float,
+            *,
+            stop_context: Mapping[str, Any] | None = None,
+            decision_id: str | None = None,
+            intent_id: str | None = None,
+        ) -> str:
+            resolved_intent = intent_id or f"sell-{symbol}-{self._next_sequence('_intent_sequence')}"
+            captured_sells.append({
+                "symbol": symbol,
+                "reason": reason,
+                "reference": float(reference),
+                "intent_id": resolved_intent,
+                "decision_id": str(decision_id or self._current_decision_id()),
+            })
+            return resolved_intent
+
+        self._submit_sell = capture_sell
+        self._cancel_pending_buys = lambda *, reason: len(self._pending_buys)
+        try:
+            self._rebalance(day, logical_hour)
+        finally:
+            self._submit_sell = original_submit_sell
+            self._cancel_pending_buys = original_cancel_pending_buys
+
         self._deferred_rebalance = {
             "kind": "risk_off_flatten",
             "decision_day": str(day),
+            "decision_id": self._current_decision_id(),
             "logical_rebalance_hour": logical_hour,
+            "submission_started": False,
+            "sells": captured_sells,
         }
+        self._persistence_checkpoint("deferred_risk_off_flatten_queued")
         decision_stamp = self._stamp(day, logical_hour)
         event = {
             "event": "deferred_risk_off_flatten_queued",
@@ -1390,82 +2706,149 @@ class RegistryHtsStrategy(Strategy):
         if intent is None or pd.Timestamp(day).date() <= pd.Timestamp(intent["decision_day"]).date():
             return
         stamp = self._stamp(day, hour)
-        if intent["kind"] == "risk_off_flatten":
-            self._selected = ()
-            self._flatten_risk_off(day, hour)
+        deferred_decision = str(intent["decision_id"])
+        if intent.get("submission_started") is True:
+            # The pre-submit checkpoint is authoritative after a restart.  We
+            # cannot know whether a process died before or after broker contact,
+            # so retrying would be the unsafe choice.  Reconciliation owns any
+            # broker order that actually exists.
+            self._audit_stream("_diag").append({
+                "event": "duplicate_decision_suppressed",
+                "decision_id": deferred_decision,
+                "path": "deferred",
+                "day": str(day),
+                "hour": hour,
+            })
+            self._deferred_rebalance = None
+            self._persistence_checkpoint("deferred_duplicate_suppressed")
+            return
+
+        processed = getattr(self, "_processed_decision_ids", None)
+        if processed is None:
+            processed = set()
+            self._processed_decision_ids = processed
+        processed.add(deferred_decision)
+        # Persist the one-way transition before allowing the scoped first
+        # submission.  Persistence remains fail-open; a failed checkpoint is
+        # diagnosed by `_persistence_checkpoint` and does not block trading.
+        intent["submission_started"] = True
+        self._persistence_checkpoint("deferred_submission_started")
+        self._submission_scope_decision_id = deferred_decision
+        try:
+            if intent["kind"] == "risk_off_flatten":
+                self._selected = ()
+                cancelled = self._cancel_pending_buys(reason="global_risk_off")
+                submitted = 0
+                for sell in intent.get("sells", []):
+                    symbol = str(sell["symbol"])
+                    state = self._positions.get(symbol)
+                    if state is None:
+                        continue
+                    price = self._execution_price(symbol, stamp)
+                    result = self._submit_sell(
+                        symbol,
+                        str(sell["reason"]),
+                        price if price is not None else float("nan"),
+                        decision_id=deferred_decision,
+                        intent_id=sell.get("intent_id"),
+                    )
+                    submitted += int(result is not None)
+                event = {
+                    "event": "deferred_risk_off_flatten_submitted",
+                    "decision_day": intent["decision_day"],
+                    "actual_submission_time": stamp.isoformat(),
+                    "source_fill_bar": stamp.isoformat(),
+                    "cancelled_buys": cancelled,
+                    "submitted_sells": submitted,
+                }
+                self._deferred_rebalance_events.append(event)
+                self._journal.append(event)
+                if cancelled or submitted:
+                    self._risk_off_flatten_count += submitted
+                    self._journal.append({
+                        "event": "global_risk_off_flatten",
+                        "day": str(day),
+                        "hour": hour,
+                        "cancelled_buys": cancelled,
+                        "submitted_sells": submitted,
+                        "race_only": False,
+                    })
+                self._deferred_rebalance = None
+                self._persistence_checkpoint("deferred_submission_complete")
+                return
+
+            # Submit planned exits first, then their replacements in the same
+            # next-session callback.  Waiting for the fill callback would make a
+            # capable 09:00 fallback become a 10:00 fill solely because LumiBot
+            # has no 15:00 iteration.  Reserve only the contemporaneous proceeds
+            # of these sells, so the combined market-order batch remains cash-safe.
+            sale_proceeds = 0.0
+            for sell in intent["sells"]:
+                symbol = str(sell["symbol"])
+                state = self._positions.get(symbol)
+                if state is not None:
+                    price = self._execution_price(symbol, stamp)
+                    if price is not None:
+                        sale_proceeds += float(state["quantity"]) * price * (1.0 - float(self._params["cost_bps_per_side"]) / 10_000.0)
+                    self._submit_sell(
+                        symbol, str(sell["reason"]),
+                        price if price is not None else float("nan"),
+                        decision_id=deferred_decision, intent_id=sell.get("intent_id"),
+                    )
+
+            try:
+                self.update_broker_balances(force_update=True)
+            except Exception:
+                pass
+            budget = max(0.0, float(self.cash or 0.0)) + sale_proceeds
+            fee_rate = float(self._params["cost_bps_per_side"]) / 10_000.0
+            submitted = 0
+            for buy in intent["buys"]:
+                symbol = str(buy["symbol"])
+                if symbol in self._positions or symbol in self._pending_buys:
+                    continue
+                price = self._execution_price(symbol, stamp)
+                if price is None:
+                    self._rejections.append({
+                        "symbol": symbol,
+                        "reason": "no_bar_at_deferred_rebalance",
+                        "day": str(day),
+                        "hour": hour,
+                    })
+                    continue
+                # Retain the completed-14:00 causal notional decision while sizing
+                # against the actual fallback open, which cannot overspend cash on
+                # a gap.
+                planned_notional = float(buy["quantity"]) * float(buy["reference"]) * (1.0 + fee_rate)
+                effective_price = price * (1.0 + fee_rate)
+                quantity = math.floor(min(planned_notional, budget) / effective_price)
+                if quantity <= 0:
+                    self._rejections.append({
+                        "symbol": symbol,
+                        "reason": "insufficient_budget_at_deferred_rebalance",
+                        "day": str(day),
+                        "hour": hour,
+                    })
+                    continue
+                budget -= quantity * effective_price
+                self._submit_buy(
+                    symbol, quantity, price, float(buy["atr"]), str(buy["reason"]),
+                    decision_id=deferred_decision, intent_id=buy.get("intent_id"),
+                )
+                submitted += 1
             event = {
-                "event": "deferred_risk_off_flatten_submitted",
+                "event": "deferred_rebalance_submitted",
                 "decision_day": intent["decision_day"],
                 "actual_submission_time": stamp.isoformat(),
                 "source_fill_bar": stamp.isoformat(),
+                "buys": submitted,
             }
             self._deferred_rebalance_events.append(event)
             self._journal.append(event)
             self._deferred_rebalance = None
-            return
-
-        # Submit planned exits first, then their replacements in the same
-        # next-session callback.  Waiting for the fill callback would make a
-        # capable 09:00 fallback become a 10:00 fill solely because LumiBot
-        # has no 15:00 iteration.  Reserve only the contemporaneous proceeds
-        # of these sells, so the combined market-order batch remains cash-safe.
-        sale_proceeds = 0.0
-        for sell in intent["sells"]:
-            symbol = str(sell["symbol"])
-            state = self._positions.get(symbol)
-            if state is not None:
-                price = self._execution_price(symbol, stamp)
-                if price is not None:
-                    sale_proceeds += float(state["quantity"]) * price * (1.0 - float(self._params["cost_bps_per_side"]) / 10_000.0)
-                self._submit_sell(symbol, str(sell["reason"]), price if price is not None else float("nan"))
-
-        try:
-            self.update_broker_balances(force_update=True)
-        except Exception:
-            pass
-        budget = max(0.0, float(self.cash or 0.0)) + sale_proceeds
-        fee_rate = float(self._params["cost_bps_per_side"]) / 10_000.0
-        submitted = 0
-        for buy in intent["buys"]:
-            symbol = str(buy["symbol"])
-            if symbol in self._positions or symbol in self._pending_buys:
-                continue
-            price = self._execution_price(symbol, stamp)
-            if price is None:
-                self._rejections.append({
-                    "symbol": symbol,
-                    "reason": "no_bar_at_deferred_rebalance",
-                    "day": str(day),
-                    "hour": hour,
-                })
-                continue
-            # Retain the completed-14:00 causal notional decision while sizing
-            # against the actual fallback open, which cannot overspend cash on
-            # a gap.
-            planned_notional = float(buy["quantity"]) * float(buy["reference"]) * (1.0 + fee_rate)
-            effective_price = price * (1.0 + fee_rate)
-            quantity = math.floor(min(planned_notional, budget) / effective_price)
-            if quantity <= 0:
-                self._rejections.append({
-                    "symbol": symbol,
-                    "reason": "insufficient_budget_at_deferred_rebalance",
-                    "day": str(day),
-                    "hour": hour,
-                })
-                continue
-            budget -= quantity * effective_price
-            self._submit_buy(symbol, quantity, price, float(buy["atr"]), str(buy["reason"]))
-            submitted += 1
-        event = {
-            "event": "deferred_rebalance_submitted",
-            "decision_day": intent["decision_day"],
-            "actual_submission_time": stamp.isoformat(),
-            "source_fill_bar": stamp.isoformat(),
-            "buys": submitted,
-        }
-        self._deferred_rebalance_events.append(event)
-        self._journal.append(event)
-        self._deferred_rebalance = None
+            self._persistence_checkpoint("deferred_submission_complete")
+        finally:
+            self._submission_scope_decision_id = None
 
     # -- lifecycle ------------------------------------------------------------
     def on_trading_iteration(self) -> None:
@@ -1492,6 +2875,7 @@ class RegistryHtsStrategy(Strategy):
             else:
                 self._flush_deferred_rebalance(day, hour)
         if hour == int(self._params["signal_hour"]) and self._schedule_due(day):
+            self._begin_decision(day, hour)
             self._selected = self._select(day)
             self._signal_day = day
         self._update_risk(day, hour, engine_time=now)
@@ -1511,6 +2895,7 @@ class RegistryHtsStrategy(Strategy):
             if self._signal_day != day:
                 # No completed signal bar this session; recompute causally from
                 # the previous completed session instead of reusing a stale pick.
+                self._begin_decision(day, hour)
                 self._selected = self._select(day)
                 self._signal_day = day
             if rebalance_hour in REBALANCE_ITERATION_HOUR_MAP:
@@ -1563,6 +2948,11 @@ class RegistryHtsStrategy(Strategy):
             # and its protective stop must use the cumulative filled quantity or a
             # multi-execution market fill leaves the bulk of the position exposed.
             entry_quantity = self._cumulative_filled_quantity(order, quantity)
+            meta = pending if isinstance(pending, Mapping) else {}
+            if not meta:
+                meta = self._order_meta(order)
+            intent_id = meta.get("intent_id")
+            decision_id = meta.get("decision_id")
             self._positions[symbol] = {
                 "quantity": entry_quantity,
                 "entry_price": float(price),
@@ -1574,10 +2964,31 @@ class RegistryHtsStrategy(Strategy):
                 "post_entry_highs": [],
                 "breach_count": 0,
                 "seeded": mode not in ("chandelier-since-entry", "chandelier-14-bar"),
+                "entry_intent_id": intent_id,
+                "entry_decision_id": decision_id,
             }
             self._journal.append({"event": "fill", "side": "buy", "symbol": symbol,
                                   "price": float(price), "quantity": entry_quantity})
+            self._record_event({
+                "event": "final_fill",
+                "symbol": symbol,
+                "side": "buy",
+                "order_id": str(getattr(order, "identifier", "") or ""),
+                "broker_order_id": str(getattr(order, "identifier", "") or ""),
+                "fill_event_price": float(price),
+                "fill_event_quantity": float(quantity),
+                "cumulative_filled_quantity": float(entry_quantity),
+                "intent_id": intent_id,
+                "decision_id": decision_id,
+            }, lifecycle=True)
             self._place_protective_stop(symbol)
+            if decision_id:
+                processed = getattr(self, "_processed_decision_ids", None)
+                if processed is None:
+                    processed = set()
+                    self._processed_decision_ids = processed
+                processed.add(str(decision_id))
+            self._persistence_checkpoint("entry_filled")
             if bool(getattr(self, "_risk_off_active", False)):
                 self._risk_off_race_symbols.add(symbol)
                 self._journal.append({
@@ -1590,12 +3001,36 @@ class RegistryHtsStrategy(Strategy):
         protective = self._protective.get(symbol)
         was_protective = protective is not None and protective is order
         self._protective.pop(symbol, None)
+        protective_meta = dict(self._state_dict("_protective_meta").pop(symbol, {}) or {})
+        sell_meta = dict(self._state_dict("_pending_sell_meta").pop(symbol, {}) or {})
         reason = self._pending_sell_reason.pop(symbol, "protective_stop" if was_protective else "unknown")
         stop_context = self._stop_exit_context.pop(symbol, None)
         self._pending_sells.discard(symbol)
         self._positions.pop(symbol, None)
+        intent_id = sell_meta.get("intent_id")
+        decision_id = sell_meta.get("decision_id")
+        if was_protective and protective_meta:
+            intent_id = protective_meta.get("intent_id") or intent_id
+            decision_id = protective_meta.get("decision_id") or decision_id
+        if not intent_id or not decision_id:
+            fallback = self._order_meta(order)
+            intent_id = intent_id or fallback.get("intent_id")
+            decision_id = decision_id or fallback.get("decision_id")
         self._journal.append({"event": "fill", "side": "sell", "symbol": symbol,
                               "price": float(price), "quantity": float(quantity), "reason": reason})
+        self._record_lifecycle_event({
+            "event": "exit_fill",
+            "symbol": symbol,
+            "side": "sell",
+            "order_id": str(getattr(order, "identifier", "") or ""),
+            "broker_order_id": str(getattr(order, "identifier", "") or ""),
+            "fill_event_price": float(price),
+            "fill_event_quantity": float(quantity),
+            "cumulative_filled_quantity": self._cumulative_filled_quantity(order, quantity),
+            "intent_id": intent_id,
+            "decision_id": decision_id,
+            "reason": reason,
+        })
         if stop_context is not None:
             event = build_virtual_stop_gap_event(
                 stop_context,
@@ -1605,10 +3040,14 @@ class RegistryHtsStrategy(Strategy):
                 fill_session=self._current_day(),
             )
             self._stop_gap_events.append(event)
-            self._lifecycle_trace.append({
+            self._record_lifecycle_event({
                 "event": "virtual_stop_filled",
                 "symbol": symbol,
+                "side": "sell",
                 "order_id": event["order_id"],
+                "broker_order_id": event["order_id"],
+                "intent_id": intent_id,
+                "decision_id": decision_id,
                 "engine_time": event["engine_time"],
                 "completed_source_bar": event["trigger_timestamp"],
                 "submission_time": event["submission_time"],
@@ -1623,11 +3062,135 @@ class RegistryHtsStrategy(Strategy):
                 # ``i + N`` blocks exactly N completed sessions after a stop fill.
                 self._cooldowns[symbol] = index + cooldown
 
+    def on_partially_filled_order(self, position: Any, order: Order, price: float,
+                                  quantity: float, multiplier: float) -> None:
+        """Additive journaling only: never promotes a partial fill."""
+        symbol = getattr(getattr(order, "asset", None), "symbol", None)
+        meta = self._order_meta(order)
+        cumulative = self._cumulative_filled_quantity(order, quantity)
+        order_id = str(getattr(order, "identifier", "") or "")
+        pending = getattr(self, "_pending_buys", {}).get(symbol) if symbol is not None else None
+        if isinstance(pending, Mapping):
+            pending["cumulative_filled_quantity"] = float(cumulative)
+            pending["last_fill_event_quantity"] = float(quantity)
+        event = {
+            "event": "partial_fill",
+            "symbol": symbol,
+            "side": "buy" if order.is_buy_order() else "sell",
+            "order_id": order_id,
+            "broker_order_id": order_id,
+            "fill_event_price": float(price),
+            "fill_event_quantity": float(quantity),
+            "cumulative_filled_quantity": float(cumulative),
+            "intent_id": meta.get("intent_id"),
+            "decision_id": meta.get("decision_id"),
+        }
+        self._record_event(event, lifecycle=True)
+        self._persistence_checkpoint("partial_fill")
+
+    def on_new_order(self, order: Order) -> None:
+        symbol = getattr(getattr(order, "asset", None), "symbol", None)
+        meta = self._order_meta(order)
+        self._record_lifecycle_event({
+            "event": "order_submitted",
+            "symbol": symbol,
+            "side": "buy" if order.is_buy_order() else "sell",
+            "order_id": str(getattr(order, "identifier", "") or ""),
+            "broker_order_id": str(getattr(order, "identifier", "") or ""),
+            "intent_id": meta.get("intent_id"),
+            "decision_id": meta.get("decision_id"),
+        })
+        self._persistence_checkpoint("on_new_order")
+
+    def on_canceled_order(self, order: Order) -> None:
+        symbol = getattr(getattr(order, "asset", None), "symbol", None)
+        meta = self._order_meta(order)
+        # A canceled order terminates its intent; reconcile any pending state.
+        pending = getattr(self, "_pending_buys", {}).pop(symbol, None)
+        if pending is not None:
+            getattr(self, "_cancelled_pending_buys", {})[symbol] = pending
+        sell_meta = self._state_dict("_pending_sell_meta").pop(symbol, None)
+        if sell_meta is not None:
+            getattr(self, "_pending_sells", set()).discard(symbol)
+            getattr(self, "_pending_sell_reason", {}).pop(symbol, None)
+        self._protective.pop(symbol, None)
+        self._state_dict("_protective_meta").pop(symbol, None)
+        self._record_lifecycle_event({
+            "event": "order_canceled",
+            "symbol": symbol,
+            "side": "buy" if order.is_buy_order() else "sell",
+            "order_id": str(getattr(order, "identifier", "") or ""),
+            "broker_order_id": str(getattr(order, "identifier", "") or ""),
+            "intent_id": meta.get("intent_id"),
+            "decision_id": meta.get("decision_id"),
+        })
+        self._persistence_checkpoint("on_canceled_order")
+
+    def on_error_order(self, order: Order, error: Any = None) -> None:
+        """Record a sanitized rejection and reconcile pending state safely.
+
+        Only the exception *class* is recorded -- never arbitrary broker text.
+        Rejections terminate the order's intent and must never leave strategy
+        state claiming an order or a protection that the broker does not have.
+        """
+        symbol = getattr(getattr(order, "asset", None), "symbol", None)
+        meta = self._order_meta(order)
+        was_protective = order in (getattr(self, "_protective", {}) or {}).values()
+        is_buy = bool(order.is_buy_order())
+        reason_class = type(error).__name__ if error is not None else "BrokerRejection"
+
+        if was_protective:
+            self._protective.pop(symbol, None)
+            self._state_dict("_protective_meta").pop(symbol, None)
+            self._stop_gap_events.append({
+                "event": "protective_order_rejected_uncovered_position",
+                "symbol": symbol,
+                "broker_order_id": str(getattr(order, "identifier", "") or ""),
+                "reason_class": reason_class,
+            })
+        elif is_buy:
+            pending = getattr(self, "_pending_buys", {}).pop(symbol, None)
+            if pending is not None:
+                getattr(self, "_cancelled_pending_buys", {}).pop(symbol, None)
+        else:
+            # Ordinary sell rejection: clear the exit intent but keep the position.
+            sell_meta = self._state_dict("_pending_sell_meta").pop(symbol, None)
+            getattr(self, "_pending_sells", set()).discard(symbol)
+            getattr(self, "_pending_sell_reason", {}).pop(symbol, None)
+            self._stop_exit_context.pop(symbol, None)
+            if sell_meta is not None:
+                meta = {**meta, **{k: v for k, v in sell_meta.items() if v is not None}}
+
+        self._record_lifecycle_event({
+            "event": "order_rejected",
+            "symbol": symbol,
+            "side": "buy" if is_buy else "sell",
+            "order_id": str(getattr(order, "identifier", "") or ""),
+            "broker_order_id": str(getattr(order, "identifier", "") or ""),
+            "intent_id": meta.get("intent_id"),
+            "decision_id": meta.get("decision_id"),
+            "reason_class": reason_class,
+        })
+        self._persistence_checkpoint("on_error_order")
+
     def _current_day(self) -> Any:
         return pd.Timestamp(self.get_datetime()).date()
 
 
 # --- metrics ------------------------------------------------------------------
+
+def load_session_end_equity(stats_path: Path, *, tz: Any = ET) -> dict[str, float]:
+    """Return one genuine session-end equity per New York session.
+
+    The last observation in each session is used; intermediate observations are
+    never synthesized or replaced by a repeated final value.
+    """
+    frame = pd.read_csv(stats_path, usecols=["datetime", "portfolio_value"])
+    stamps = pd.to_datetime(frame["datetime"], utc=True).dt.tz_convert(tz)
+    frame = frame.assign(session=stamps.dt.date, stamp=stamps)
+    daily = frame.sort_values("stamp").groupby("session", sort=True)["portfolio_value"].last()
+    return {str(session): float(value) for session, value in daily.items()}
+
 
 def standard_metrics(stats_path: Path, *, initial_cash: float = INITIAL_CASH) -> dict[str, Any]:
     """Compute standard daily metrics from LumiBot's saved equity curve.
@@ -1636,12 +3199,9 @@ def standard_metrics(stats_path: Path, *, initial_cash: float = INITIAL_CASH) ->
     starting budget and is explicit so a synthetic curve can be measured against
     its own first value.
     """
-    frame = pd.read_csv(stats_path, usecols=["datetime", "portfolio_value"])
-    stamps = pd.to_datetime(frame["datetime"], utc=True).dt.tz_convert(ET)
-    frame = frame.assign(session=stamps.dt.date, stamp=stamps)
-    daily = frame.sort_values("stamp").groupby("session", sort=True)["portfolio_value"].last()
-    daily.index = pd.to_datetime(daily.index)
-    equity = daily.astype(float)
+    curve = load_session_end_equity(stats_path)
+    equity = pd.Series(curve, dtype="float64")
+    equity.index = pd.to_datetime(equity.index)
     returns = equity.pct_change().dropna()
     sessions = int(len(equity))
     total_return = float(equity.iloc[-1] / initial_cash - 1.0) if sessions else float("nan")
@@ -1953,6 +3513,15 @@ def build_payload(
         "deferred_rebalance_events": list(getattr(strategy, "_deferred_rebalance_events", ())),
         "position_pnl_records": position_pnl_records,
     }
+    # One common serializer feeds both native artifacts and the live writer so
+    # the two schemas cannot drift.
+    try:
+        payload["strategy_events"] = build_strategy_event_payload(
+            strategy, session=str(window.end) if window is not None else None,
+        )
+    except Exception as error:  # audit must never fail a completed backtest
+        payload["strategy_events"] = None
+        payload["strategy_events_error"] = type(error).__name__
     if candidate.kind in {"control", "hts", KIND_HTS_V2}:
         payload["hour_mapping_convention"] = HTS_HOURLY_CONVENTION
     if candidate.kind == KIND_HTS_V2:

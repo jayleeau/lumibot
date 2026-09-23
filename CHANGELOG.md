@@ -2,6 +2,29 @@
 
 ## 4.5.92 - Unreleased
 
+### Added
+- Strategy-owned HTS decision persistence and parity contract (in-repo, offline
+  qualified): the real `_rebalance()` path records a full pre-submission decision
+  snapshot for normal, risk-off, no-op, and deferred decisions (schema v1); the
+  session/event payload (schema v2) carries full snapshots and open-order lineage
+  and is accepted end-to-end by `scripts/verify_paper_six_parity.py`; restart
+  state (schema v2) requires complete buy/sell/protective lineage and a persisted
+  deferred-submission gate; broker-authoritative reconciliation removes
+  unresolved pending state and marks broker-only positions
+  `legacy_unverifiable`; and processed decisions cannot re-contact the broker on
+  entry, sell, risk-off, reactive, or deferred paths. Lifecycle verification is
+  a per-intent state machine with decision joins, stable order IDs, transition
+  ordering, and cumulative-fill arithmetic. Volatility-target forecast stages
+  are replayed. The optional native comparison resolves each persisted paper
+  catalog ID to its declared H100/H022 parent; successful runs aggregate repeated
+  live sessions into one native window and use the real session-end equity curve,
+  while missing lineage or local archives and native run failures return
+  structured `UNVERIFIABLE` (exit 2) instead of a traceback. Persistence stays
+  fail-open and the strategy's cumulative-fill implementation is unchanged.
+  **Not included:** the six-bot live fleet is not wired to write state or
+  session evidence, no live state files/audit directories are produced, and no
+  controlled fleet evidence exists. See `docs/HTS_PAPER6_PARITY.md`.
+
 ### Changed
 - HTS v1 now has a local-cache replay command that runs the same shared
   decision core as the paper wrapper and records its decisions, next-open fills,

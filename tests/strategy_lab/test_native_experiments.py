@@ -431,7 +431,23 @@ def test_virtual_stop_lifecycle_respects_completed_bar_causality() -> None:
     clock["now"] = pd.Timestamp("2024-09-24 15:00")
     same_day.on_trading_iteration()
     assert len(submitted) == 1
-    assert same_day._lifecycle_trace[-1] == {
+    # NOTE (fix-3 remediation): virtual-stop records now carry authoritative
+    # time/sequence and joinable intent/decision/order lineage, as required by
+    # plans/fix-3-remediation-plan.md F3.  The causal timing fields below are
+    # unchanged; the assertion checks them as a subset plus the new lineage.
+    stop_event = same_day._lifecycle_trace[-1]
+    assert {
+        key: stop_event[key]
+        for key in (
+            "event",
+            "symbol",
+            "order_id",
+            "engine_time",
+            "completed_source_bar",
+            "submission_time",
+            "source_fill_bar",
+        )
+    } == {
         "event": "virtual_stop_submitted",
         "symbol": "AAA",
         "order_id": "order-1",
@@ -440,6 +456,10 @@ def test_virtual_stop_lifecycle_respects_completed_bar_causality() -> None:
         "submission_time": "2024-09-24T15:00:00",
         "source_fill_bar": "2024-09-24T15:00:00",
     }
+    assert stop_event["decision_id"]
+    assert stop_event["intent_id"]
+    assert stop_event["event_time"]
+    assert isinstance(stop_event["event_sequence"], int)
     same_day.on_filled_order(None, submitted[0], 90.0, 2.0, 1.0)
     assert same_day._stop_gap_events[0]["fill_time"] == "2024-09-24T15:00:00"
 
@@ -447,8 +467,12 @@ def test_virtual_stop_lifecycle_respects_completed_bar_causality() -> None:
     clock["now"] = pd.Timestamp("2024-09-24 16:00")
     overnight.on_trading_iteration()
     assert submitted == []
-    assert overnight._lifecycle_trace[-1]["event"] == "virtual_stop_deferred_no_executable_bar"
-    assert overnight._lifecycle_trace[-1]["completed_source_bar"] == "2024-09-24T15:00:00"
+    # Fix #3 keeps the typed lifecycle stream order-only.  A missing executable
+    # bar is a diagnostic, not an order transition, so it belongs in the journal.
+    assert overnight._lifecycle_trace == []
+    deferred = overnight._journal[-1]
+    assert deferred["event"] == "virtual_stop_deferred_no_executable_bar"
+    assert deferred["completed_source_bar"] == "2024-09-24T15:00:00"
     clock["now"] = pd.Timestamp("2024-09-25 09:00")
     overnight.on_trading_iteration()
     assert len(submitted) == 1
